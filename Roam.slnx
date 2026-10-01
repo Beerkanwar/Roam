@@ -1,0 +1,17 @@
+<Solution>
+  <Folder Name="/src/">
+    <Project Path="src/Roam.Api/Roam.Api.csproj" />
+    <Project Path="src/Roam.App/Roam.App.csproj" />
+    <Project Path="src/Roam.Application/Roam.Application.csproj" />
+    <Project Path="src/Roam.Contracts/Roam.Contracts.csproj" />
+    <Project Path="src/Roam.Domain/Roam.Domain.csproj" />
+    <Project Path="src/Roam.Infrastructure/Roam.Infrastructure.csproj" />
+  </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/Roam.Api.Tests/Roam.Api.Tests.csproj" />
+    <Project Path="tests/Roam.Application.Tests/Roam.Application.Tests.csproj" />
+    <Project Path="tests/Roam.Domain.Tests/Roam.Domain.Tests.csproj" />
+    <Project Path="tests/Roam.Infrastructure.Tests/Roam.Infrastructure.Tests.csproj" />
+    <Project Path="tests/Roam.IntegrationTests/Roam.IntegrationTests.csproj" />
+  </Folder>
+</Solution>

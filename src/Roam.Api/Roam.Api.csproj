@@ -1,0 +1,19 @@
+<Project Sdk="Microsoft.NET.Sdk.Web">
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.AspNetCore.OpenApi" Version="10.0.12" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\Roam.Application\Roam.Application.csproj" />
+    <ProjectReference Include="..\Roam.Contracts\Roam.Contracts.csproj" />
+    <ProjectReference Include="..\Roam.Infrastructure\Roam.Infrastructure.csproj" />
+  </ItemGroup>
+
+</Project>
