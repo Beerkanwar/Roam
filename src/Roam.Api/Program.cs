@@ -7,6 +7,7 @@ using Roam.Infrastructure.Places;
 using Roam.Infrastructure.TourRequests;
 using Roam.Infrastructure.Maps;
 using Roam.Api.Endpoints;
+using Roam.Api.Hubs;
 using Serilog;
 
 var builder = WebApplication.CreateBuilder(args);
@@ -27,6 +28,9 @@ builder.Services.AddDbContext<ApplicationDbContext>(options =>
 builder.Services.AddHttpClient<IGeocodingService, OsmGeocodingService>();
 builder.Services.AddScoped<IPlaceService, PlaceService>();
 builder.Services.AddScoped<ITourRequestService, TourRequestService>();
+
+// Add SignalR
+builder.Services.AddSignalR();
 
 // Add Health Checks
 builder.Services.AddHealthChecks()
@@ -68,5 +72,7 @@ app.MapPlacesEndpoints();
 app.MapTourRequestEndpoints();
 
 app.MapGet("/", () => "Roam API is running").WithApiVersionSet(app.NewApiVersionSet().Build());
+
+app.MapHub<TourHub>("/hubs/tour");
 
 app.Run();
