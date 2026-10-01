@@ -2,7 +2,9 @@ using Asp.Versioning;
 using Microsoft.EntityFrameworkCore;
 using Roam.Infrastructure.Persistence;
 using Roam.Application.Places;
+using Roam.Application.TourRequests;
 using Roam.Infrastructure.Places;
+using Roam.Infrastructure.TourRequests;
 using Roam.Infrastructure.Maps;
 using Roam.Api.Endpoints;
 using Serilog;
@@ -24,6 +26,7 @@ builder.Services.AddDbContext<ApplicationDbContext>(options =>
 // Add Places Services
 builder.Services.AddHttpClient<IGeocodingService, OsmGeocodingService>();
 builder.Services.AddScoped<IPlaceService, PlaceService>();
+builder.Services.AddScoped<ITourRequestService, TourRequestService>();
 
 // Add Health Checks
 builder.Services.AddHealthChecks()
@@ -62,6 +65,7 @@ app.UseHttpsRedirection();
 app.MapHealthChecks("/health");
 
 app.MapPlacesEndpoints();
+app.MapTourRequestEndpoints();
 
 app.MapGet("/", () => "Roam API is running").WithApiVersionSet(app.NewApiVersionSet().Build());
 

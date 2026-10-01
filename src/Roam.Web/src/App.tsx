@@ -36,6 +36,32 @@ function App() {
     }
   };
 
+  const handleRequestTour = async (placeId: string) => {
+    try {
+      const response = await fetch(`https://localhost:7154/api/v1/tour-requests`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+          placeId: placeId,
+          visibility: 0, // Group
+          mode: 0, // Immediate
+          description: "I'd like to see this place."
+        })
+      });
+
+      if (response.ok) {
+        alert("Tour requested successfully!");
+      } else {
+        alert("Failed to request tour.");
+      }
+    } catch (err) {
+      console.error(err);
+      alert("Error requesting tour.");
+    }
+  };
+
   return (
     <div style={{ position: 'relative', width: '100%', height: '100vh' }}>
       <Map />
@@ -66,6 +92,11 @@ function App() {
               <li key={i} style={{ padding: '10px', borderBottom: '1px solid #eee', color: '#333' }}>
                 <strong style={{ display: 'block' }}>{place.name}</strong>
                 <small>{place.description}</small>
+                {place.id && (
+                  <button onClick={() => handleRequestTour(place.id!)} style={{ marginTop: '5px', padding: '5px', cursor: 'pointer', backgroundColor: '#512BD4', color: 'white', border: 'none', borderRadius: '4px' }}>
+                    Request Tour
+                  </button>
+                )}
               </li>
             ))}
           </ul>

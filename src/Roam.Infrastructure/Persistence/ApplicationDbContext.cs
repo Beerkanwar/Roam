@@ -2,12 +2,14 @@ using Microsoft.AspNetCore.Identity.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore;
 
 using Roam.Domain.Places;
+using Roam.Domain.TourRequests;
 
 namespace Roam.Infrastructure.Persistence;
 
 public class ApplicationDbContext : IdentityDbContext
 {
     public DbSet<Place> Places { get; set; }
+    public DbSet<TourRequest> TourRequests { get; set; }
 
     public ApplicationDbContext(DbContextOptions<ApplicationDbContext> options)
         : base(options)
