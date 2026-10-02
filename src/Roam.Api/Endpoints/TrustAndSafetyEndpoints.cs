@@ -66,7 +66,25 @@ public static class TrustAndSafetyEndpoints
                 return Results.BadRequest(new { error = ex.Message });
             }
         });
+        group.MapPost("/feedback", async ([FromBody] SubmitFeedbackRequest request, [FromServices] IFeedbackService feedbackService, ClaimsPrincipal user) => 
+        {
+            var reviewerIdStr = user.FindFirstValue(ClaimTypes.NameIdentifier);
+            if (!Guid.TryParse(reviewerIdStr, out var reviewerId)) return Results.Unauthorized();
+
+            var feedback = await feedbackService.SubmitFeedbackAsync(request.TourSessionId, reviewerId, request.TargetUserId, request.Rating, request.Comments);
+            return Results.Ok(new { feedback.Id, feedback.Rating });
+        })
+        .WithName("SubmitFeedback")
+        .WithSummary("Submit post-session feedback");
     }
+}
+
+public class SubmitFeedbackRequest
+{
+    public Guid TourSessionId { get; set; }
+    public Guid TargetUserId { get; set; }
+    public FeedbackRating Rating { get; set; }
+    public string? Comments { get; set; }
 }
 
 public class ResolveReportRequest

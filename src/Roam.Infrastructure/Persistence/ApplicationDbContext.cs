@@ -7,6 +7,7 @@ using Roam.Domain.TourSessions;
 using Roam.Domain.TrustAndSafety;
 using Roam.Domain.Users;
 using Roam.Domain.Chat;
+using Roam.Domain.Payments;
 
 namespace Roam.Infrastructure.Persistence;
 
@@ -25,6 +26,12 @@ public class ApplicationDbContext : IdentityDbContext<ApplicationUser>
     public DbSet<ChatMessage> ChatMessages { get; set; }
     public DbSet<ModerationCase> ModerationCases { get; set; }
     public DbSet<ModerationAuditLog> ModerationAuditLogs { get; set; }
+
+    // Payments & Feedback
+    public DbSet<Feedback> Feedbacks { get; set; }
+    public DbSet<TipAccount> TipAccounts { get; set; }
+    public DbSet<TipTransaction> TipTransactions { get; set; }
+    public DbSet<Donation> Donations { get; set; }
 
     public ApplicationDbContext(DbContextOptions<ApplicationDbContext> options)
         : base(options)

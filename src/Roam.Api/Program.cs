@@ -42,6 +42,8 @@ builder.Services.AddScoped<ITourRequestService, TourRequestService>();
 builder.Services.AddScoped<ITrustAndSafetyService, TrustAndSafetyService>();
 builder.Services.AddScoped<Roam.Application.Chat.IChatService, Roam.Infrastructure.Chat.ChatService>();
 builder.Services.AddScoped<ITourNotificationService, Roam.Api.Services.SignalRTourNotificationService>();
+builder.Services.AddScoped<Roam.Application.TrustAndSafety.IFeedbackService, Roam.Infrastructure.TrustAndSafety.FeedbackService>();
+builder.Services.AddScoped<Roam.Application.Payments.IPaymentService, Roam.Infrastructure.Payments.PaymentService>();
 
 // TURN Server configuration
 builder.Services.Configure<Roam.Application.Sessions.TurnServerOptions>(builder.Configuration.GetSection(Roam.Application.Sessions.TurnServerOptions.Position));
@@ -108,6 +110,7 @@ app.MapTrustAndSafetyEndpoints();
 app.MapUserProfileEndpoints();
 app.MapSessionEndpoints();
 app.MapChatEndpoints();
+app.MapPaymentsEndpoints();
 app.MapIdentityApi<ApplicationUser>();
 
 app.MapGet("/", () => "Roam API is running").WithApiVersionSet(app.NewApiVersionSet().Build());
