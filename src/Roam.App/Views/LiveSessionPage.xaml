@@ -1,0 +1,54 @@
+<?xml version="1.0" encoding="utf-8" ?>
+<ContentPage xmlns="http://schemas.microsoft.com/dotnet/2021/maui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2009/xaml"
+             xmlns:viewmodels="clr-namespace:Roam.App.ViewModels"
+             x:Class="Roam.App.Views.LiveSessionPage"
+             Title="Live Session MVP">
+    
+    <ContentPage.BindingContext>
+        <viewmodels:LiveSessionViewModel />
+    </ContentPage.BindingContext>
+
+    <Grid RowDefinitions="Auto, *, Auto">
+        
+        <!-- Top Toolbar -->
+        <HorizontalStackLayout Grid.Row="0" Padding="10" Spacing="10" BackgroundColor="#E0E0E0">
+            <Entry Placeholder="Session ID" Text="{Binding SessionId}" WidthRequest="150" />
+            <Button Text="Join" Command="{Binding JoinCommand}" />
+            <Button Text="Leave" Command="{Binding LeaveCommand}" />
+            <Label Text="{Binding StatusText}" VerticalOptions="Center" Margin="10,0,0,0" />
+        </HorizontalStackLayout>
+        
+        <!-- Main Area: WebRTC Placeholder + Chat -->
+        <Grid Grid.Row="1" ColumnDefinitions="*, 300">
+            
+            <!-- WebRTC Placeholder (A local HTML file or native bindings will go here later) -->
+            <WebView Grid.Column="0" Source="about:blank" BackgroundColor="Black" />
+            <Label Grid.Column="0" Text="WebRTC Video Stream Placeholder" 
+                   TextColor="White" HorizontalOptions="Center" VerticalOptions="Center" />
+
+            <!-- Chat Panel -->
+            <Grid Grid.Column="1" RowDefinitions="*, Auto" BackgroundColor="#F5F5F5">
+                
+                <CollectionView Grid.Row="0" ItemsSource="{Binding ChatMessages}" Margin="10">
+                    <CollectionView.ItemTemplate>
+                        <DataTemplate>
+                            <VerticalStackLayout Margin="0,5">
+                                <Label Text="{Binding SenderName}" FontAttributes="Bold" FontSize="12" />
+                                <Label Text="{Binding Text}" FontSize="14" />
+                            </VerticalStackLayout>
+                        </DataTemplate>
+                    </CollectionView.ItemTemplate>
+                </CollectionView>
+                
+                <!-- Chat Input -->
+                <HorizontalStackLayout Grid.Row="1" Padding="10" Spacing="10" BackgroundColor="White">
+                    <Entry Placeholder="Type a message..." Text="{Binding MessageText}" WidthRequest="200" />
+                    <Button Text="Send" Command="{Binding SendCommand}" />
+                </HorizontalStackLayout>
+            </Grid>
+            
+        </Grid>
+        
+    </Grid>
+</ContentPage>
