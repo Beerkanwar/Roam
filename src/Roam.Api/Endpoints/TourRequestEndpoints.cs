@@ -36,10 +36,40 @@ public static class TourRequestEndpoints
             return success ? Results.Ok() : Results.BadRequest("Cannot accept request from current state.");
         });
 
-        group.MapPost("/{id}/schedule", async (string id, [FromBody] DateTime scheduledTime, ITourRequestService service, CancellationToken cancellationToken) =>
+        group.MapPost("/{id}/schedule/propose", async (string id, [FromBody] ProposeScheduleDto dto, ClaimsPrincipal user, ITourRequestService service, CancellationToken cancellationToken) =>
         {
-            var success = await service.ScheduleRequestAsync(id, scheduledTime, cancellationToken);
-            return success ? Results.Ok() : Results.BadRequest("Cannot schedule request from current state.");
+            var userId = user.FindFirstValue(ClaimTypes.NameIdentifier) ?? throw new InvalidOperationException("User ID missing from token.");
+            try
+            {
+                var schedule = await service.ProposeScheduleAsync(id, userId, dto.ProposedStartUtc, dto.ProposedEndUtc, cancellationToken);
+                return Results.Ok(schedule);
+            }
+            catch (UnauthorizedAccessException) { return Results.Forbid(); }
+            catch (InvalidOperationException ex) { return Results.BadRequest(ex.Message); }
+        });
+
+        group.MapPost("/schedule/{scheduleId}/accept", async (string scheduleId, ClaimsPrincipal user, ITourRequestService service, CancellationToken cancellationToken) =>
+        {
+            var userId = user.FindFirstValue(ClaimTypes.NameIdentifier) ?? throw new InvalidOperationException("User ID missing from token.");
+            try
+            {
+                var success = await service.AcceptScheduleAsync(scheduleId, userId, cancellationToken);
+                return success ? Results.Ok() : Results.BadRequest("Cannot accept schedule.");
+            }
+            catch (UnauthorizedAccessException) { return Results.Forbid(); }
+            catch (InvalidOperationException ex) { return Results.BadRequest(ex.Message); }
+        });
+
+        group.MapPost("/schedule/{scheduleId}/reject", async (string scheduleId, ClaimsPrincipal user, ITourRequestService service, CancellationToken cancellationToken) =>
+        {
+            var userId = user.FindFirstValue(ClaimTypes.NameIdentifier) ?? throw new InvalidOperationException("User ID missing from token.");
+            try
+            {
+                var success = await service.RejectScheduleAsync(scheduleId, userId, cancellationToken);
+                return success ? Results.Ok() : Results.BadRequest("Cannot reject schedule.");
+            }
+            catch (UnauthorizedAccessException) { return Results.Forbid(); }
+            catch (InvalidOperationException ex) { return Results.BadRequest(ex.Message); }
         });
 
         group.MapGet("/", async (ClaimsPrincipal user, ITourRequestService service, [FromQuery] double radius = 5000, CancellationToken cancellationToken = default) =>
@@ -121,4 +151,10 @@ public static class TourRequestEndpoints
 public class CancelRequestDto
 {
     public string Reason { get; set; } = string.Empty;
+}
+
+public class ProposeScheduleDto
+{
+    public DateTime ProposedStartUtc { get; set; }
+    public DateTime? ProposedEndUtc { get; set; }
 }

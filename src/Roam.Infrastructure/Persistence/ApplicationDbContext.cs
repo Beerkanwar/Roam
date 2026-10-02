@@ -13,6 +13,7 @@ public class ApplicationDbContext : IdentityDbContext<ApplicationUser>
 {
     public DbSet<Place> Places { get; set; }
     public DbSet<TourRequest> TourRequests { get; set; }
+    public DbSet<ScheduledTour> ScheduledTours { get; set; }
     public DbSet<TourSession> TourSessions { get; set; }
     public DbSet<TourParticipant> TourParticipants { get; set; }
     public DbSet<Report> Reports { get; set; }

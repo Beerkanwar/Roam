@@ -26,7 +26,9 @@ public interface ITourRequestService
     Task<TourRequest> CreateRequestAsync(CreateTourRequestDto dto, CancellationToken cancellationToken = default);
     Task<TourRequest> CreateRequestByCoordinatesAsync(CreateTourRequestByCoordinatesDto dto, CancellationToken cancellationToken = default);
     Task<bool> AcceptRequestAsync(string id, string volunteerId, CancellationToken cancellationToken = default);
-    Task<bool> ScheduleRequestAsync(string id, DateTime scheduledTime, CancellationToken cancellationToken = default);
+    Task<ScheduledTour> ProposeScheduleAsync(string requestId, string userId, DateTime startTime, DateTime? endTime = null, CancellationToken cancellationToken = default);
+    Task<bool> AcceptScheduleAsync(string scheduleId, string userId, CancellationToken cancellationToken = default);
+    Task<bool> RejectScheduleAsync(string scheduleId, string userId, CancellationToken cancellationToken = default);
     Task<IEnumerable<TourRequest>> GetNearbyRequestsAsync(string volunteerId, double radiusMeters, CancellationToken cancellationToken = default);
     
     // Lifecycle Transitions

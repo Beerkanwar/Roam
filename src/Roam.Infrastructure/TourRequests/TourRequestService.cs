@@ -81,14 +81,78 @@ public class TourRequestService : ITourRequestService
         return true;
     }
 
-    public async Task<bool> ScheduleRequestAsync(string id, DateTime scheduledTime, CancellationToken cancellationToken = default)
+    public async Task<ScheduledTour> ProposeScheduleAsync(string requestId, string userId, DateTime startTime, DateTime? endTime = null, CancellationToken cancellationToken = default)
     {
-        var request = await _context.TourRequests.FindAsync(new object[] { id }, cancellationToken);
+        var request = await _context.TourRequests.FindAsync(new object[] { requestId }, cancellationToken);
+        if (request == null) throw new InvalidOperationException("Request not found");
+
+        if (request.RequesterId != userId && request.AssignedVolunteerId != userId)
+            throw new UnauthorizedAccessException("User is not authorized to propose a schedule for this request.");
+
+        var schedule = new ScheduledTour
+        {
+            TourRequestId = requestId,
+            ProposedByUserId = userId,
+            ProposedStartUtc = startTime,
+            ProposedEndUtc = endTime
+        };
+
+        if (request.RequesterId == userId)
+            schedule.RequesterAcceptedAt = DateTime.UtcNow;
+        else
+            schedule.VolunteerAcceptedAt = DateTime.UtcNow;
+
+        _context.ScheduledTours.Add(schedule);
+        await _context.SaveChangesAsync(cancellationToken);
+
+        // Notify the other party
+        // Optional: wait _notificationService.ScheduleProposedAsync(...)
+        return schedule;
+    }
+
+    public async Task<bool> AcceptScheduleAsync(string scheduleId, string userId, CancellationToken cancellationToken = default)
+    {
+        var schedule = await _context.ScheduledTours.FindAsync(new object[] { scheduleId }, cancellationToken);
+        if (schedule == null || schedule.Status != ScheduledTourStatus.Proposed) return false;
+
+        var request = await _context.TourRequests.FindAsync(new object[] { schedule.TourRequestId }, cancellationToken);
         if (request == null) return false;
 
-        request.TransitionTo(TourRequestStatus.Confirmed);
+        if (request.RequesterId != userId && request.AssignedVolunteerId != userId)
+            throw new UnauthorizedAccessException("User is not authorized to accept this schedule.");
 
-        request.RequestedStartTime = scheduledTime;
+        if (request.RequesterId == userId)
+            schedule.RequesterAcceptedAt = DateTime.UtcNow;
+        else
+            schedule.VolunteerAcceptedAt = DateTime.UtcNow;
+
+        if (schedule.RequesterAcceptedAt.HasValue && schedule.VolunteerAcceptedAt.HasValue)
+        {
+            schedule.Status = ScheduledTourStatus.Accepted;
+            schedule.UpdatedAt = DateTime.UtcNow;
+            
+            request.TransitionTo(TourRequestStatus.Confirmed);
+            request.RequestedStartTime = schedule.ProposedStartUtc;
+        }
+
+        await _context.SaveChangesAsync(cancellationToken);
+        return true;
+    }
+
+    public async Task<bool> RejectScheduleAsync(string scheduleId, string userId, CancellationToken cancellationToken = default)
+    {
+        var schedule = await _context.ScheduledTours.FindAsync(new object[] { scheduleId }, cancellationToken);
+        if (schedule == null || schedule.Status != ScheduledTourStatus.Proposed) return false;
+
+        var request = await _context.TourRequests.FindAsync(new object[] { schedule.TourRequestId }, cancellationToken);
+        if (request == null) return false;
+
+        if (request.RequesterId != userId && request.AssignedVolunteerId != userId)
+            throw new UnauthorizedAccessException("User is not authorized to reject this schedule.");
+
+        schedule.Status = ScheduledTourStatus.Rejected;
+        schedule.UpdatedAt = DateTime.UtcNow;
+
         await _context.SaveChangesAsync(cancellationToken);
         return true;
     }
