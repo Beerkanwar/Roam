@@ -42,6 +42,10 @@ builder.Services.AddScoped<ITourRequestService, TourRequestService>();
 builder.Services.AddScoped<ITrustAndSafetyService, TrustAndSafetyService>();
 builder.Services.AddScoped<ITourNotificationService, Roam.Api.Services.SignalRTourNotificationService>();
 
+// TURN Server configuration
+builder.Services.Configure<Roam.Application.Sessions.TurnServerOptions>(builder.Configuration.GetSection(Roam.Application.Sessions.TurnServerOptions.Position));
+builder.Services.AddScoped<Roam.Application.Sessions.ITurnService, Roam.Infrastructure.Realtime.TurnService>();
+
 // Add SignalR
 builder.Services.AddSignalR();
 
@@ -101,6 +105,7 @@ app.MapPlacesEndpoints();
 app.MapTourRequestEndpoints();
 app.MapTrustAndSafetyEndpoints();
 app.MapUserProfileEndpoints();
+app.MapSessionEndpoints();
 app.MapIdentityApi<ApplicationUser>();
 
 app.MapGet("/", () => "Roam API is running").WithApiVersionSet(app.NewApiVersionSet().Build());
