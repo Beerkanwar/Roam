@@ -1,3 +1,4 @@
+using System.Security.Claims;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
@@ -40,11 +41,9 @@ public static class UserProfileEndpoints
             return Results.Ok(publicProfile);
         });
 
-        // NOTE: In a real app this would require [Authorize] and would infer UserId from Claims
-        group.MapPut("/volunteer-settings", async ([FromBody] VolunteerSettings dto, ApplicationDbContext context, CancellationToken cancellationToken) =>
+        group.MapPut("/volunteer-settings", async (ClaimsPrincipal user, [FromBody] VolunteerSettings dto, ApplicationDbContext context, CancellationToken cancellationToken) =>
         {
-            if (string.IsNullOrEmpty(dto.UserId))
-                return Results.BadRequest("UserId is required.");
+            dto.UserId = user.FindFirstValue(ClaimTypes.NameIdentifier) ?? throw new InvalidOperationException("User ID missing from token.");
 
             var existing = await context.VolunteerSettings.FirstOrDefaultAsync(vs => vs.UserId == dto.UserId, cancellationToken);
 
@@ -65,6 +64,6 @@ public static class UserProfileEndpoints
 
             await context.SaveChangesAsync(cancellationToken);
             return Results.Ok();
-        });
+        }).RequireAuthorization();
     }
 }

@@ -1,3 +1,4 @@
+using System.Security.Claims;
 using Microsoft.AspNetCore.Mvc;
 using Roam.Application.TrustAndSafety;
 
@@ -9,12 +10,12 @@ public static class TrustAndSafetyEndpoints
     {
         var group = builder.MapGroup("/api/v1/trust-safety")
             .WithTags("TrustAndSafety")
-            .WithApiVersionSet(builder.NewApiVersionSet().Build());
+            .WithApiVersionSet(builder.NewApiVersionSet().Build())
+            .RequireAuthorization();
 
-        group.MapPost("/reports", async ([FromBody] CreateReportDto dto, ITrustAndSafetyService service, CancellationToken cancellationToken) =>
+        group.MapPost("/reports", async (ClaimsPrincipal user, [FromBody] CreateReportDto dto, ITrustAndSafetyService service, CancellationToken cancellationToken) =>
         {
-            if (string.IsNullOrEmpty(dto.ReporterId))
-                dto.ReporterId = "user_" + Guid.NewGuid().ToString("N")[..8]; // MVP fallback
+            dto.ReporterId = user.FindFirstValue(ClaimTypes.NameIdentifier) ?? throw new InvalidOperationException("User ID missing from token.");
 
             var report = await service.SubmitReportAsync(dto, cancellationToken);
             return Results.Created($"/api/v1/trust-safety/reports/{report.Id}", report);

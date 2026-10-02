@@ -1,7 +1,9 @@
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.SignalR;
 
 namespace Roam.Api.Hubs;
 
+[Authorize]
 public class TourHub : Hub
 {
     // Join a specific tour session room

@@ -81,6 +81,9 @@ var app = builder.Build();
 
 app.UseCors();
 
+app.UseAuthentication();
+app.UseAuthorization();
+
 app.UseSerilogRequestLogging();
 
 if (app.Environment.IsDevelopment()) 
@@ -102,5 +105,12 @@ app.MapIdentityApi<ApplicationUser>();
 app.MapGet("/", () => "Roam API is running").WithApiVersionSet(app.NewApiVersionSet().Build());
 
 app.MapHub<TourHub>("/hubs/tour");
+
+// Apply migrations automatically
+using (var scope = app.Services.CreateScope())
+{
+    var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+    await dbContext.Database.MigrateAsync();
+}
 
 app.Run();
