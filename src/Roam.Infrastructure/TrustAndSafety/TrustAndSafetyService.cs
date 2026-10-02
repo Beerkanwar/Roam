@@ -1,6 +1,7 @@
 using Microsoft.EntityFrameworkCore;
 using Roam.Application.TrustAndSafety;
 using Roam.Domain.TrustAndSafety;
+using Roam.Domain.Users;
 using Roam.Infrastructure.Persistence;
 
 namespace Roam.Infrastructure.TrustAndSafety;
@@ -28,6 +29,13 @@ public class TrustAndSafetyService : ITrustAndSafetyService
         };
 
         _context.Reports.Add(report);
+        
+        var moderationCase = new ModerationCase
+        {
+            ReportId = report.Id,
+            TargetUserId = dto.ReportedUserId
+        };
+        _context.ModerationCases.Add(moderationCase);
         
         // As a side-effect, we can log a reliability event against the reported user for tracking
         var reliabilityEvent = new ReliabilityEvent
@@ -71,5 +79,80 @@ public class TrustAndSafetyService : ITrustAndSafetyService
         string feedbackLevel = totalScore >= 0 ? "Positive" : "Needs Improvement";
 
         return $"{completedTours} tours completed. Community feedback: {feedbackLevel}.";
+    }
+
+    public async Task BlockUserAsync(string blockerId, string blockedId, CancellationToken cancellationToken = default)
+    {
+        var exists = await _context.UserBlocks
+            .AnyAsync(ub => ub.BlockerId == blockerId && ub.BlockedId == blockedId, cancellationToken);
+            
+        if (!exists)
+        {
+            _context.UserBlocks.Add(new UserBlock
+            {
+                BlockerId = blockerId,
+                BlockedId = blockedId
+            });
+            await _context.SaveChangesAsync(cancellationToken);
+        }
+    }
+
+    public async Task UnblockUserAsync(string blockerId, string blockedId, CancellationToken cancellationToken = default)
+    {
+        var block = await _context.UserBlocks
+            .FirstOrDefaultAsync(ub => ub.BlockerId == blockerId && ub.BlockedId == blockedId, cancellationToken);
+            
+        if (block != null)
+        {
+            _context.UserBlocks.Remove(block);
+            await _context.SaveChangesAsync(cancellationToken);
+        }
+    }
+
+    public async Task<IEnumerable<string>> GetBlockedUsersAsync(string userId, CancellationToken cancellationToken = default)
+    {
+        return await _context.UserBlocks
+            .Where(ub => ub.BlockerId == userId)
+            .Select(ub => ub.BlockedId)
+            .ToListAsync(cancellationToken);
+    }
+
+    public async Task ResolveReportAsync(string reportId, ModerationAction action, string moderatorId, string reason, CancellationToken cancellationToken = default)
+    {
+        var report = await _context.Reports.FirstOrDefaultAsync(r => r.Id == reportId, cancellationToken);
+        if (report == null) throw new ArgumentException("Report not found.");
+        
+        var modCase = await _context.ModerationCases.FirstOrDefaultAsync(m => m.ReportId == reportId, cancellationToken);
+        if (modCase == null) throw new ArgumentException("Moderation case not found.");
+        
+        report.Status = action == ModerationAction.NoAction ? ReportStatus.Dismissed : ReportStatus.ActionTaken;
+        modCase.Status = ModerationCaseStatus.Closed;
+        modCase.ClosedAt = DateTime.UtcNow;
+        
+        var auditLog = new ModerationAuditLog
+        {
+            ModerationCaseId = modCase.Id,
+            TargetUserId = modCase.TargetUserId,
+            ModeratorId = moderatorId,
+            Action = action,
+            Reason = reason
+        };
+        _context.ModerationAuditLogs.Add(auditLog);
+        
+        // Apply user status changes
+        var targetUser = await _context.Users.FirstOrDefaultAsync(u => u.Id == modCase.TargetUserId, cancellationToken);
+        if (targetUser != null)
+        {
+            if (action == ModerationAction.Suspension)
+            {
+                targetUser.AccountStatus = AccountStatus.Suspended;
+            }
+            else if (action == ModerationAction.PermanentRemoval)
+            {
+                targetUser.AccountStatus = AccountStatus.Banned;
+            }
+        }
+        
+        await _context.SaveChangesAsync(cancellationToken);
     }
 }

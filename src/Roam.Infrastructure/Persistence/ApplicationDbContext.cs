@@ -21,7 +21,10 @@ public class ApplicationDbContext : IdentityDbContext<ApplicationUser>
     public DbSet<ReliabilityEvent> ReliabilityEvents { get; set; }
     public DbSet<VolunteerSettings> VolunteerSettings { get; set; }
     public DbSet<UserLocation> UserLocations { get; set; }
+    public DbSet<UserBlock> UserBlocks { get; set; }
     public DbSet<ChatMessage> ChatMessages { get; set; }
+    public DbSet<ModerationCase> ModerationCases { get; set; }
+    public DbSet<ModerationAuditLog> ModerationAuditLogs { get; set; }
 
     public ApplicationDbContext(DbContextOptions<ApplicationDbContext> options)
         : base(options)
