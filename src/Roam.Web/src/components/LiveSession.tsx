@@ -67,12 +67,41 @@ const LiveSession: React.FC<LiveSessionProps> = ({ sessionId }) => {
         }
     };
 
+    const handleReport = async () => {
+        try {
+            const response = await fetch('https://localhost:7154/api/v1/trust-safety/reports', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    reportedUserId: 'mock_volunteer_123',
+                    tourSessionId: sessionId,
+                    reason: 2, // InappropriateContent
+                    description: 'Mock report submitted from UI.',
+                    severity: 1 // Medium
+                })
+            });
+
+            if (response.ok) {
+                alert('Report submitted successfully.');
+            } else {
+                alert('Failed to submit report.');
+            }
+        } catch (error) {
+            console.error(error);
+        }
+    };
+
     return (
         <div style={{ padding: '20px', backgroundColor: '#f0f0f0', borderRadius: '8px', color: '#333', marginTop: '15px' }}>
             <h3>Live Session: {sessionId}</h3>
-            <button onClick={sendMockOffer} style={{ padding: '8px 16px', backgroundColor: '#512BD4', color: 'white', border: 'none', borderRadius: '4px', cursor: 'pointer', marginBottom: '15px' }}>
-                Broadcast WebRTC Offer
-            </button>
+            <div style={{ display: 'flex', gap: '10px', marginBottom: '15px' }}>
+                <button onClick={sendMockOffer} style={{ padding: '8px 16px', backgroundColor: '#512BD4', color: 'white', border: 'none', borderRadius: '4px', cursor: 'pointer' }}>
+                    Broadcast WebRTC Offer
+                </button>
+                <button onClick={handleReport} style={{ padding: '8px 16px', backgroundColor: '#d13438', color: 'white', border: 'none', borderRadius: '4px', cursor: 'pointer' }}>
+                    Report User
+                </button>
+            </div>
             <div style={{ backgroundColor: 'black', color: 'lime', padding: '10px', height: '150px', overflowY: 'auto', fontSize: '12px', fontFamily: 'monospace' }}>
                 {logs.map((log, index) => <div key={index}>{log}</div>)}
             </div>
