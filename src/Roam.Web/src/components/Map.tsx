@@ -14,10 +14,35 @@ const Map: React.FC<MapProps> = ({ onLocationSelected }) => {
         if (map.current || !mapContainer.current) return; // initialize map only once
         
         const apiKey = import.meta.env.VITE_MAP_API_KEY || ''; // Needs to be provided in MissingInputs
+        
+        const isDummyKey = apiKey === '' || apiKey.includes('your_maptiler_api_key_here');
+
+        const mapStyle = isDummyKey ? {
+            version: 8 as const,
+            sources: {
+                'osm-tiles': {
+                    type: 'raster' as const,
+                    tiles: [
+                        'https://a.tile.openstreetmap.org/{z}/{x}/{y}.png',
+                        'https://b.tile.openstreetmap.org/{z}/{x}/{y}.png',
+                        'https://c.tile.openstreetmap.org/{z}/{x}/{y}.png'
+                    ],
+                    tileSize: 256,
+                    attribution: '&copy; OpenStreetMap contributors'
+                }
+            },
+            layers: [{
+                id: 'osm-tiles-layer',
+                type: 'raster' as const,
+                source: 'osm-tiles',
+                minzoom: 0,
+                maxzoom: 19
+            }]
+        } : `https://api.maptiler.com/maps/streets-v2/style.json?key=${apiKey}`;
 
         map.current = new maplibregl.Map({
             container: mapContainer.current,
-            style: `https://api.maptiler.com/maps/streets-v2/style.json?key=${apiKey}`, // Defaulting to MapTiler format
+            style: mapStyle,
             center: [0, 0],
             zoom: 2
         });
