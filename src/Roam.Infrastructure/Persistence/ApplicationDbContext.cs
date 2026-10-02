@@ -5,10 +5,11 @@ using Roam.Domain.Places;
 using Roam.Domain.TourRequests;
 using Roam.Domain.TourSessions;
 using Roam.Domain.TrustAndSafety;
+using Roam.Domain.Users;
 
 namespace Roam.Infrastructure.Persistence;
 
-public class ApplicationDbContext : IdentityDbContext
+public class ApplicationDbContext : IdentityDbContext<ApplicationUser>
 {
     public DbSet<Place> Places { get; set; }
     public DbSet<TourRequest> TourRequests { get; set; }
@@ -16,6 +17,7 @@ public class ApplicationDbContext : IdentityDbContext
     public DbSet<TourParticipant> TourParticipants { get; set; }
     public DbSet<Report> Reports { get; set; }
     public DbSet<ReliabilityEvent> ReliabilityEvents { get; set; }
+    public DbSet<VolunteerSettings> VolunteerSettings { get; set; }
 
     public ApplicationDbContext(DbContextOptions<ApplicationDbContext> options)
         : base(options)

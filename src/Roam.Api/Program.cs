@@ -8,6 +8,7 @@ using Roam.Infrastructure.Places;
 using Roam.Infrastructure.TourRequests;
 using Roam.Infrastructure.TrustAndSafety;
 using Roam.Infrastructure.Maps;
+using Roam.Domain.Users;
 using Roam.Api.Endpoints;
 using Roam.Api.Hubs;
 using Serilog;
@@ -25,6 +26,14 @@ builder.Services.AddDbContext<ApplicationDbContext>(options =>
     options.UseNpgsql(
         builder.Configuration.GetConnectionString("DefaultConnection"),
         x => x.UseNetTopologySuite()));
+
+// Configure Identity
+builder.Services.AddIdentityApiEndpoints<ApplicationUser>()
+    .AddEntityFrameworkStores<ApplicationDbContext>();
+
+// Add Auth
+builder.Services.AddAuthentication();
+builder.Services.AddAuthorization();
 
 // Add Places Services
 builder.Services.AddHttpClient<IGeocodingService, OsmGeocodingService>();
@@ -74,6 +83,8 @@ app.MapHealthChecks("/health");
 app.MapPlacesEndpoints();
 app.MapTourRequestEndpoints();
 app.MapTrustAndSafetyEndpoints();
+app.MapUserProfileEndpoints();
+app.MapIdentityApi<ApplicationUser>();
 
 app.MapGet("/", () => "Roam API is running").WithApiVersionSet(app.NewApiVersionSet().Build());
 
