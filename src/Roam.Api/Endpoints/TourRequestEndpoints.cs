@@ -41,5 +41,32 @@ public static class TourRequestEndpoints
             var success = await service.ScheduleRequestAsync(id, scheduledTime, cancellationToken);
             return success ? Results.Ok() : Results.BadRequest("Cannot schedule request from current state.");
         });
+
+        group.MapGet("/", async (ClaimsPrincipal user, ITourRequestService service, [FromQuery] double radius = 5000, CancellationToken cancellationToken = default) =>
+        {
+            var volunteerId = user.FindFirstValue(ClaimTypes.NameIdentifier) ?? throw new InvalidOperationException("User ID missing from token.");
+
+            var requests = await service.GetNearbyRequestsAsync(volunteerId, radius, cancellationToken);
+            
+            // Map the requests to a safe response DTO to avoid cyclic references or returning unnecessary internal fields
+            var response = requests.Select(r => new
+            {
+                r.Id,
+                r.RequesterId,
+                r.Description,
+                r.Mode,
+                r.Visibility,
+                Place = new 
+                {
+                    r.Place.Id,
+                    r.Place.Name,
+                    r.Place.Description,
+                    Latitude = r.Place.Location.Y,
+                    Longitude = r.Place.Location.X
+                }
+            });
+
+            return Results.Ok(response);
+        });
     }
 }

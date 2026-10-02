@@ -27,4 +27,5 @@ public interface ITourRequestService
     Task<TourRequest> CreateRequestByCoordinatesAsync(CreateTourRequestByCoordinatesDto dto, CancellationToken cancellationToken = default);
     Task<bool> AcceptRequestAsync(string id, string volunteerId, CancellationToken cancellationToken = default);
     Task<bool> ScheduleRequestAsync(string id, DateTime scheduledTime, CancellationToken cancellationToken = default);
+    Task<IEnumerable<TourRequest>> GetNearbyRequestsAsync(string volunteerId, double radiusMeters, CancellationToken cancellationToken = default);
 }

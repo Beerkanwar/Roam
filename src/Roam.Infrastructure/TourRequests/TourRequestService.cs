@@ -91,4 +91,27 @@ public class TourRequestService : ITourRequestService
 
         return false;
     }
+
+    public async Task<IEnumerable<TourRequest>> GetNearbyRequestsAsync(string volunteerId, double radiusMeters, CancellationToken cancellationToken = default)
+    {
+        // 1. Get the volunteer's current location
+        var userLocation = await _context.UserLocations
+            .AsNoTracking()
+            .FirstOrDefaultAsync(l => l.UserId == volunteerId, cancellationToken);
+
+        if (userLocation == null)
+        {
+            return Array.Empty<TourRequest>(); // We cannot find nearby requests if we don't know where the volunteer is
+        }
+
+        // 2. Find published requests that are associated with a Place within the radius
+        var nearbyRequests = await _context.TourRequests
+            .Include(r => r.Place) // Ensure Place data is loaded
+            .Where(r => r.Status == TourRequestStatus.Published)
+            .Where(r => r.Place.Location.IsWithinDistance(userLocation.Location, radiusMeters))
+            .AsNoTracking()
+            .ToListAsync(cancellationToken);
+
+        return nearbyRequests;
+    }
 }
