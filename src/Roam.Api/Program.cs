@@ -40,6 +40,7 @@ builder.Services.AddHttpClient<IGeocodingService, OsmGeocodingService>();
 builder.Services.AddScoped<IPlaceService, PlaceService>();
 builder.Services.AddScoped<ITourRequestService, TourRequestService>();
 builder.Services.AddScoped<ITrustAndSafetyService, TrustAndSafetyService>();
+builder.Services.AddScoped<ITourNotificationService, Roam.Api.Services.SignalRTourNotificationService>();
 
 // Add SignalR
 builder.Services.AddSignalR();
@@ -105,6 +106,9 @@ app.MapIdentityApi<ApplicationUser>();
 app.MapGet("/", () => "Roam API is running").WithApiVersionSet(app.NewApiVersionSet().Build());
 
 app.MapHub<TourHub>("/hubs/tour");
+app.MapHub<NotificationHub>("/hubs/notifications");
+app.MapHub<ChatHub>("/hubs/chat");
+app.MapHub<PresenceHub>("/hubs/presence");
 
 // Apply migrations automatically
 using (var scope = app.Services.CreateScope())

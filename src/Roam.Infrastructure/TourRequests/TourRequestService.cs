@@ -8,10 +8,14 @@ namespace Roam.Infrastructure.TourRequests;
 public class TourRequestService : ITourRequestService
 {
     private readonly ApplicationDbContext _context;
+    private readonly ITourNotificationService _notificationService;
 
-    public TourRequestService(ApplicationDbContext context)
+    public TourRequestService(
+        ApplicationDbContext context, 
+        ITourNotificationService notificationService)
     {
         _context = context;
+        _notificationService = notificationService;
     }
 
     public async Task<TourRequest> CreateRequestAsync(CreateTourRequestDto dto, CancellationToken cancellationToken = default)
@@ -28,6 +32,8 @@ public class TourRequestService : ITourRequestService
 
         _context.TourRequests.Add(request);
         await _context.SaveChangesAsync(cancellationToken);
+
+        await _notificationService.TourRequestCreatedAsync(request.Id);
 
         return request;
     }
@@ -68,6 +74,10 @@ public class TourRequestService : ITourRequestService
         request.TransitionTo(TourRequestStatus.Accepted);
         request.AssignedVolunteerId = volunteerId;
         await _context.SaveChangesAsync(cancellationToken);
+
+        // Notify the requester and global feed
+        await _notificationService.TourRequestAcceptedAsync(id, volunteerId, request.RequesterId);
+        
         return true;
     }
 
@@ -135,6 +145,10 @@ public class TourRequestService : ITourRequestService
         request.TransitionTo(TourRequestStatus.Active);
         
         await _context.SaveChangesAsync(cancellationToken);
+
+        // Notify global feed and session participants
+        await _notificationService.TourStartingAsync(id);
+
         return true;
     }
 
@@ -149,6 +163,9 @@ public class TourRequestService : ITourRequestService
         request.TransitionTo(TourRequestStatus.Completed);
         
         await _context.SaveChangesAsync(cancellationToken);
+
+        await _notificationService.TourEndedAsync(id);
+
         return true;
     }
 
