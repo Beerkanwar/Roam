@@ -21,6 +21,7 @@ public class PlaceService : IPlaceService
         // For MVP: Search the local DB first. If not found, use geocoding service.
         var localPlaces = await _context.Places
             .Where(p => p.Name.ToLower().Contains(query.ToLower()))
+            .OrderBy(p => p.Name)
             .Take(10)
             .ToListAsync(cancellationToken);
 

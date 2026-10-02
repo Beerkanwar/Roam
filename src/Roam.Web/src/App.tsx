@@ -22,7 +22,7 @@ function App() {
 
     setLoading(true);
     try {
-      const response = await fetch(`https://localhost:7216/api/v1/places/search?q=${encodeURIComponent(searchQuery)}`);
+      const response = await fetch(`https://localhost:7217/api/v1/places/search?q=${encodeURIComponent(searchQuery)}`);
       if (response.ok) {
         const data = await response.json();
         setPlaces(data);
@@ -39,7 +39,7 @@ function App() {
 
   const handleRequestTourById = async (placeId: string) => {
     try {
-      const response = await fetch(`https://localhost:7216/api/v1/tour-requests`, {
+      const response = await fetch(`https://localhost:7217/api/v1/tour-requests`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json'
@@ -66,7 +66,7 @@ function App() {
   const handleRequestTourByCoords = async () => {
     if (!selectedCoords) return;
     try {
-      const response = await fetch(`https://localhost:7216/api/v1/tour-requests/coordinates`, {
+      const response = await fetch(`https://localhost:7217/api/v1/tour-requests/coordinates`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json'
