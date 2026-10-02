@@ -11,7 +11,7 @@ const LiveSession: React.FC<LiveSessionProps> = ({ sessionId }) => {
 
     useEffect(() => {
         const newConnection = new signalR.HubConnectionBuilder()
-            .withUrl("https://localhost:7154/hubs/tour")
+            .withUrl("https://localhost:7216/hubs/tour")
             .withAutomaticReconnect()
             .build();
 
@@ -69,7 +69,7 @@ const LiveSession: React.FC<LiveSessionProps> = ({ sessionId }) => {
 
     const handleReport = async () => {
         try {
-            const response = await fetch('https://localhost:7154/api/v1/trust-safety/reports', {
+            const response = await fetch('https://localhost:7216/api/v1/trust-safety/reports', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({

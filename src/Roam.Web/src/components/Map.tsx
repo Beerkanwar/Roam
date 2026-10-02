@@ -49,7 +49,17 @@ const Map: React.FC<MapProps> = ({ onLocationSelected }) => {
 
         map.current.addControl(new maplibregl.NavigationControl(), 'top-right');
         
+        let currentMarker: maplibregl.Marker | null = null;
+
         map.current.on('click', (e) => {
+            if (currentMarker) {
+                currentMarker.remove();
+            }
+            
+            currentMarker = new maplibregl.Marker({ color: '#d13438' })
+                .setLngLat([e.lngLat.lng, e.lngLat.lat])
+                .addTo(map.current!);
+
             if (onLocationSelected) {
                 onLocationSelected(e.lngLat.lat, e.lngLat.lng);
             }
