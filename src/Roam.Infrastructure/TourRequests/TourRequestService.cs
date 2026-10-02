@@ -32,6 +32,34 @@ public class TourRequestService : ITourRequestService
         return request;
     }
 
+    public async Task<TourRequest> CreateRequestByCoordinatesAsync(CreateTourRequestByCoordinatesDto dto, CancellationToken cancellationToken = default)
+    {
+        var place = new Roam.Domain.Places.Place
+        {
+            Name = "Custom Location",
+            Description = "Requested at specific coordinates",
+            Location = new NetTopologySuite.Geometries.Point(dto.Longitude, dto.Latitude) { SRID = 4326 }
+        };
+
+        _context.Places.Add(place);
+        await _context.SaveChangesAsync(cancellationToken);
+
+        var request = new TourRequest
+        {
+            RequesterId = dto.RequesterId,
+            PlaceId = place.Id,
+            Visibility = dto.Visibility,
+            Mode = dto.Mode,
+            Description = dto.Description,
+            Status = TourRequestStatus.Published
+        };
+
+        _context.TourRequests.Add(request);
+        await _context.SaveChangesAsync(cancellationToken);
+
+        return request;
+    }
+
     public async Task<bool> AcceptRequestAsync(string id, string volunteerId, CancellationToken cancellationToken = default)
     {
         var request = await _context.TourRequests.FindAsync(new object[] { id }, cancellationToken);

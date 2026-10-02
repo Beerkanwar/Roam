@@ -6,14 +6,14 @@ namespace Roam.Domain.Tests.TourRequests;
 public class TourRequestTests
 {
     [Fact]
-    public void Accept_WhenPending_ShouldTransitionToAccepted()
+    public void Accept_WhenPublished_ShouldTransitionToAccepted()
     {
         // Arrange
         var request = new TourRequest
         {
             PlaceId = "place-1",
             RequesterId = "user-1",
-            Status = TourRequestStatus.Pending
+            Status = TourRequestStatus.Published
         };
 
         // Act
@@ -24,14 +24,14 @@ public class TourRequestTests
     }
 
     [Fact]
-    public void Cancel_WhenPending_ShouldTransitionToCancelled()
+    public void Cancel_WhenPublished_ShouldTransitionToCancelled()
     {
         // Arrange
         var request = new TourRequest
         {
             PlaceId = "place-1",
             RequesterId = "user-1",
-            Status = TourRequestStatus.Pending
+            Status = TourRequestStatus.Published
         };
 
         // Act

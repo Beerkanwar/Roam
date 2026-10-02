@@ -21,6 +21,15 @@ public static class TourRequestEndpoints
             return Results.Created($"/api/v1/tour-requests/{request.Id}", request);
         });
 
+        group.MapPost("/coordinates", async ([FromBody] CreateTourRequestByCoordinatesDto dto, ITourRequestService service, CancellationToken cancellationToken) =>
+        {
+            if (string.IsNullOrEmpty(dto.RequesterId))
+                dto.RequesterId = "user_" + Guid.NewGuid().ToString("N")[..8];
+
+            var request = await service.CreateRequestByCoordinatesAsync(dto, cancellationToken);
+            return Results.Created($"/api/v1/tour-requests/{request.Id}", request);
+        });
+
         group.MapPost("/{id}/accept", async (string id, [FromQuery] string volunteerId, ITourRequestService service, CancellationToken cancellationToken) =>
         {
             var success = await service.AcceptRequestAsync(id, volunteerId, cancellationToken);
