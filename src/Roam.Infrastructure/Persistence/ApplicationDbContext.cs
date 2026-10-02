@@ -18,6 +18,7 @@ public class ApplicationDbContext : IdentityDbContext<ApplicationUser>
     public DbSet<Report> Reports { get; set; }
     public DbSet<ReliabilityEvent> ReliabilityEvents { get; set; }
     public DbSet<VolunteerSettings> VolunteerSettings { get; set; }
+    public DbSet<UserLocation> UserLocations { get; set; }
 
     public ApplicationDbContext(DbContextOptions<ApplicationDbContext> options)
         : base(options)
@@ -30,5 +31,7 @@ public class ApplicationDbContext : IdentityDbContext<ApplicationUser>
         
         // PostGIS setup
         builder.HasPostgresExtension("postgis");
+        
+        builder.ApplyConfigurationsFromAssembly(typeof(ApplicationDbContext).Assembly);
     }
 }

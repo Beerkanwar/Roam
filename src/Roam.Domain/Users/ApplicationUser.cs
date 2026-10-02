@@ -8,8 +8,11 @@ public class ApplicationUser : IdentityUser
     public string Country { get; set; } = string.Empty;
     public string? ProfilePhotoUrl { get; set; }
     
-    public string AccountStatus { get; set; } = "Active";
-    public string VolunteerStatus { get; set; } = "None"; // e.g. None, Pending, Approved
+    public AccountStatus AccountStatus { get; set; } = AccountStatus.Active;
+    public VolunteerStatus VolunteerStatus { get; set; } = VolunteerStatus.None;
+    
+    public DateOnly? DateOfBirth { get; set; }
+    public AgeCategory AgeCategory { get; set; } = AgeCategory.Unknown;
     
     public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
     public DateTime UpdatedAt { get; set; } = DateTime.UtcNow;
