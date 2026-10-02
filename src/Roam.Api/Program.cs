@@ -40,6 +40,7 @@ builder.Services.AddHttpClient<IGeocodingService, OsmGeocodingService>();
 builder.Services.AddScoped<IPlaceService, PlaceService>();
 builder.Services.AddScoped<ITourRequestService, TourRequestService>();
 builder.Services.AddScoped<ITrustAndSafetyService, TrustAndSafetyService>();
+builder.Services.AddScoped<Roam.Application.Chat.IChatService, Roam.Infrastructure.Chat.ChatService>();
 builder.Services.AddScoped<ITourNotificationService, Roam.Api.Services.SignalRTourNotificationService>();
 
 // TURN Server configuration
@@ -106,6 +107,7 @@ app.MapTourRequestEndpoints();
 app.MapTrustAndSafetyEndpoints();
 app.MapUserProfileEndpoints();
 app.MapSessionEndpoints();
+app.MapChatEndpoints();
 app.MapIdentityApi<ApplicationUser>();
 
 app.MapGet("/", () => "Roam API is running").WithApiVersionSet(app.NewApiVersionSet().Build());

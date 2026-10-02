@@ -6,6 +6,7 @@ using Roam.Domain.TourRequests;
 using Roam.Domain.TourSessions;
 using Roam.Domain.TrustAndSafety;
 using Roam.Domain.Users;
+using Roam.Domain.Chat;
 
 namespace Roam.Infrastructure.Persistence;
 
@@ -20,6 +21,7 @@ public class ApplicationDbContext : IdentityDbContext<ApplicationUser>
     public DbSet<ReliabilityEvent> ReliabilityEvents { get; set; }
     public DbSet<VolunteerSettings> VolunteerSettings { get; set; }
     public DbSet<UserLocation> UserLocations { get; set; }
+    public DbSet<ChatMessage> ChatMessages { get; set; }
 
     public ApplicationDbContext(DbContextOptions<ApplicationDbContext> options)
         : base(options)

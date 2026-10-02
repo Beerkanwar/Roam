@@ -6,11 +6,26 @@ using Microsoft.AspNetCore.SignalR;
 
 namespace Roam.Api.Hubs;
 
+using Roam.Application.Chat;
+using Roam.Contracts.Chat;
+
 [Authorize]
 public class ChatHub : Hub<IChatClient>
 {
+    private readonly IChatService _chatService;
+
+    public ChatHub(IChatService chatService)
+    {
+        _chatService = chatService;
+    }
+
     public async Task JoinSessionChat(string sessionId)
     {
+        var userId = Context.User?.FindFirstValue(ClaimTypes.NameIdentifier);
+        if (string.IsNullOrEmpty(userId) || !await _chatService.IsUserParticipantAsync(sessionId, userId))
+        {
+            throw new HubException("Unauthorized to join this session's chat.");
+        }
         await Groups.AddToGroupAsync(Context.ConnectionId, sessionId);
     }
 
@@ -21,9 +36,14 @@ public class ChatHub : Hub<IChatClient>
 
     public async Task SendMessage(string sessionId, string message)
     {
-        var senderId = Context.User?.FindFirstValue(ClaimTypes.NameIdentifier) ?? "Unknown";
-        var timestamp = DateTime.UtcNow.ToString("o");
-        await Clients.Group(sessionId).ChatMessageReceived(senderId, message, timestamp);
+        var senderId = Context.User?.FindFirstValue(ClaimTypes.NameIdentifier);
+        if (string.IsNullOrEmpty(senderId))
+        {
+            throw new HubException("Unauthorized.");
+        }
+
+        var savedMessageDto = await _chatService.SendMessageAsync(sessionId, senderId, message);
+        await Clients.Group(sessionId).ChatMessageReceived(savedMessageDto);
     }
 
     public async Task SendTypingStarted(string sessionId)
