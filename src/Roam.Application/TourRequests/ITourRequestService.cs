@@ -28,4 +28,11 @@ public interface ITourRequestService
     Task<bool> AcceptRequestAsync(string id, string volunteerId, CancellationToken cancellationToken = default);
     Task<bool> ScheduleRequestAsync(string id, DateTime scheduledTime, CancellationToken cancellationToken = default);
     Task<IEnumerable<TourRequest>> GetNearbyRequestsAsync(string volunteerId, double radiusMeters, CancellationToken cancellationToken = default);
+    
+    // Lifecycle Transitions
+    Task<bool> CancelRequestAsync(string id, string userId, string reason, CancellationToken cancellationToken = default);
+    Task<bool> ExpireRequestAsync(string id, CancellationToken cancellationToken = default);
+    Task<bool> MarkVolunteerInterestedAsync(string id, string volunteerId, CancellationToken cancellationToken = default);
+    Task<bool> StartTourAsync(string id, string volunteerId, CancellationToken cancellationToken = default);
+    Task<bool> CompleteTourAsync(string id, string volunteerId, CancellationToken cancellationToken = default);
 }

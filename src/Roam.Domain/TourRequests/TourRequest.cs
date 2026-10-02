@@ -19,6 +19,35 @@ public class TourRequest
     public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
     public DateTime? ExpiresAt { get; set; }
     
+    public string? AssignedVolunteerId { get; set; }
+    
+    // Cancellation Data
+    public string? CancelledByUserId { get; set; }
+    public string? CancellationReason { get; set; }
+    public DateTime? CancelledAt { get; set; }
+    public bool WasLateCancellation { get; set; }
+    
     // Navigation properties (if needed by EF)
     public Place? Place { get; set; }
+
+    public void TransitionTo(TourRequestStatus targetState)
+    {
+        bool valid = targetState switch
+        {
+            TourRequestStatus.Published => Status == TourRequestStatus.Draft,
+            TourRequestStatus.VolunteerInterested => Status == TourRequestStatus.Published || Status == TourRequestStatus.Matching,
+            TourRequestStatus.Accepted => Status == TourRequestStatus.VolunteerInterested || Status == TourRequestStatus.Published || Status == TourRequestStatus.Matching,
+            TourRequestStatus.Confirmed => Status == TourRequestStatus.Accepted,
+            TourRequestStatus.Active => Status == TourRequestStatus.Confirmed || Status == TourRequestStatus.Accepted,
+            TourRequestStatus.Completed => Status == TourRequestStatus.Active,
+            TourRequestStatus.Cancelled => Status != TourRequestStatus.Completed && Status != TourRequestStatus.Active && Status != TourRequestStatus.Cancelled,
+            TourRequestStatus.Expired => Status == TourRequestStatus.Published || Status == TourRequestStatus.Matching,
+            _ => false
+        };
+
+        if (!valid)
+            throw new InvalidOperationException($"Cannot transition from {Status} to {targetState}");
+
+        Status = targetState;
+    }
 }

@@ -68,5 +68,57 @@ public static class TourRequestEndpoints
 
             return Results.Ok(response);
         });
+
+        group.MapPost("/{id}/cancel", async (string id, [FromBody] CancelRequestDto dto, ClaimsPrincipal user, ITourRequestService service, CancellationToken cancellationToken) =>
+        {
+            var userId = user.FindFirstValue(ClaimTypes.NameIdentifier) ?? throw new InvalidOperationException("User ID missing from token.");
+            try
+            {
+                var success = await service.CancelRequestAsync(id, userId, dto.Reason, cancellationToken);
+                return success ? Results.Ok() : Results.NotFound();
+            }
+            catch (UnauthorizedAccessException) { return Results.Forbid(); }
+            catch (InvalidOperationException ex) { return Results.BadRequest(ex.Message); }
+        });
+
+        group.MapPost("/{id}/start", async (string id, ClaimsPrincipal user, ITourRequestService service, CancellationToken cancellationToken) =>
+        {
+            var userId = user.FindFirstValue(ClaimTypes.NameIdentifier) ?? throw new InvalidOperationException("User ID missing from token.");
+            try
+            {
+                var success = await service.StartTourAsync(id, userId, cancellationToken);
+                return success ? Results.Ok() : Results.NotFound();
+            }
+            catch (UnauthorizedAccessException) { return Results.Forbid(); }
+            catch (InvalidOperationException ex) { return Results.BadRequest(ex.Message); }
+        });
+
+        group.MapPost("/{id}/complete", async (string id, ClaimsPrincipal user, ITourRequestService service, CancellationToken cancellationToken) =>
+        {
+            var userId = user.FindFirstValue(ClaimTypes.NameIdentifier) ?? throw new InvalidOperationException("User ID missing from token.");
+            try
+            {
+                var success = await service.CompleteTourAsync(id, userId, cancellationToken);
+                return success ? Results.Ok() : Results.NotFound();
+            }
+            catch (UnauthorizedAccessException) { return Results.Forbid(); }
+            catch (InvalidOperationException ex) { return Results.BadRequest(ex.Message); }
+        });
+
+        group.MapPost("/{id}/interest", async (string id, ClaimsPrincipal user, ITourRequestService service, CancellationToken cancellationToken) =>
+        {
+            var userId = user.FindFirstValue(ClaimTypes.NameIdentifier) ?? throw new InvalidOperationException("User ID missing from token.");
+            try
+            {
+                var success = await service.MarkVolunteerInterestedAsync(id, userId, cancellationToken);
+                return success ? Results.Ok() : Results.NotFound();
+            }
+            catch (InvalidOperationException ex) { return Results.BadRequest(ex.Message); }
+        });
     }
+}
+
+public class CancelRequestDto
+{
+    public string Reason { get; set; } = string.Empty;
 }

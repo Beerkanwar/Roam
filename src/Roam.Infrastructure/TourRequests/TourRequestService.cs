@@ -65,15 +65,10 @@ public class TourRequestService : ITourRequestService
         var request = await _context.TourRequests.FindAsync(new object[] { id }, cancellationToken);
         if (request == null) return false;
 
-        // Valid transitions to Accepted: VolunteerInterested or Published (if immediate accept is allowed)
-        if (request.Status == TourRequestStatus.Published || request.Status == TourRequestStatus.Matching)
-        {
-            request.Status = TourRequestStatus.Accepted;
-            await _context.SaveChangesAsync(cancellationToken);
-            return true;
-        }
-
-        return false; // Invalid transition
+        request.TransitionTo(TourRequestStatus.Accepted);
+        request.AssignedVolunteerId = volunteerId;
+        await _context.SaveChangesAsync(cancellationToken);
+        return true;
     }
 
     public async Task<bool> ScheduleRequestAsync(string id, DateTime scheduledTime, CancellationToken cancellationToken = default)
@@ -81,15 +76,80 @@ public class TourRequestService : ITourRequestService
         var request = await _context.TourRequests.FindAsync(new object[] { id }, cancellationToken);
         if (request == null) return false;
 
-        if (request.Status == TourRequestStatus.Accepted)
-        {
-            request.RequestedStartTime = scheduledTime;
-            request.Status = TourRequestStatus.Confirmed;
-            await _context.SaveChangesAsync(cancellationToken);
-            return true;
-        }
+        request.TransitionTo(TourRequestStatus.Confirmed);
 
-        return false;
+        request.RequestedStartTime = scheduledTime;
+        await _context.SaveChangesAsync(cancellationToken);
+        return true;
+    }
+
+    public async Task<bool> CancelRequestAsync(string id, string userId, string reason, CancellationToken cancellationToken = default)
+    {
+        var request = await _context.TourRequests.FindAsync(new object[] { id }, cancellationToken);
+        if (request == null) return false;
+
+        if (request.RequesterId != userId && request.AssignedVolunteerId != userId)
+            throw new UnauthorizedAccessException("Only the requester or assigned volunteer can cancel this tour.");
+
+        request.TransitionTo(TourRequestStatus.Cancelled);
+
+        request.CancelledByUserId = userId;
+        request.CancellationReason = reason;
+        request.CancelledAt = DateTime.UtcNow;
+
+        await _context.SaveChangesAsync(cancellationToken);
+        return true;
+    }
+
+    public async Task<bool> ExpireRequestAsync(string id, CancellationToken cancellationToken = default)
+    {
+        var request = await _context.TourRequests.FindAsync(new object[] { id }, cancellationToken);
+        if (request == null) return false;
+
+        request.TransitionTo(TourRequestStatus.Expired);
+        
+        await _context.SaveChangesAsync(cancellationToken);
+        return true;
+    }
+
+    public async Task<bool> MarkVolunteerInterestedAsync(string id, string volunteerId, CancellationToken cancellationToken = default)
+    {
+        var request = await _context.TourRequests.FindAsync(new object[] { id }, cancellationToken);
+        if (request == null) return false;
+
+        request.TransitionTo(TourRequestStatus.VolunteerInterested);
+        
+        request.AssignedVolunteerId = volunteerId; // tentative
+        await _context.SaveChangesAsync(cancellationToken);
+        return true;
+    }
+
+    public async Task<bool> StartTourAsync(string id, string volunteerId, CancellationToken cancellationToken = default)
+    {
+        var request = await _context.TourRequests.FindAsync(new object[] { id }, cancellationToken);
+        if (request == null) return false;
+
+        if (request.AssignedVolunteerId != volunteerId)
+            throw new UnauthorizedAccessException("Only the assigned volunteer can start this tour.");
+
+        request.TransitionTo(TourRequestStatus.Active);
+        
+        await _context.SaveChangesAsync(cancellationToken);
+        return true;
+    }
+
+    public async Task<bool> CompleteTourAsync(string id, string volunteerId, CancellationToken cancellationToken = default)
+    {
+        var request = await _context.TourRequests.FindAsync(new object[] { id }, cancellationToken);
+        if (request == null) return false;
+
+        if (request.AssignedVolunteerId != volunteerId)
+            throw new UnauthorizedAccessException("Only the assigned volunteer can complete this tour.");
+
+        request.TransitionTo(TourRequestStatus.Completed);
+        
+        await _context.SaveChangesAsync(cancellationToken);
+        return true;
     }
 
     public async Task<IEnumerable<TourRequest>> GetNearbyRequestsAsync(string volunteerId, double radiusMeters, CancellationToken cancellationToken = default)
