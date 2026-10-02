@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using Microsoft.EntityFrameworkCore.Migrations;
 using NetTopologySuite.Geometries;
 
@@ -12,6 +12,8 @@ namespace Roam.Infrastructure.Migrations
         /// <inheritdoc />
         protected override void Up(MigrationBuilder migrationBuilder)
         {
+            migrationBuilder.Sql("ALTER TABLE \"AspNetUsers\" ALTER COLUMN \"VolunteerStatus\" TYPE integer USING 0;");
+            migrationBuilder.Sql("ALTER TABLE \"AspNetUsers\" ALTER COLUMN \"AccountStatus\" TYPE integer USING 0;");
             migrationBuilder.AlterColumn<int>(
                 name: "VolunteerStatus",
                 table: "AspNetUsers",

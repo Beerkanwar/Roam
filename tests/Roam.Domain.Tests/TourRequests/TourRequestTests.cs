@@ -31,13 +31,15 @@ public class TourRequestTests
         {
             PlaceId = "place-1",
             RequesterId = "user-1",
-            Status = TourRequestStatus.Published
+            Status = TourRequestStatus.Draft
         };
 
         // Act
-        request.Status = TourRequestStatus.Cancelled;
+        request.Status = TourRequestStatus.Published;
 
         // Assert
-        Assert.Equal(TourRequestStatus.Cancelled, request.Status);
+        Assert.Equal(TourRequestStatus.Published, request.Status);
+        Assert.Equal("place-1", request.PlaceId);
+        Assert.Equal("user-1", request.RequesterId);
     }
 }
