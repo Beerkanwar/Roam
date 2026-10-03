@@ -85,15 +85,15 @@ public static class TourRequestEndpoints
                 r.RequesterId,
                 r.Description,
                 r.Mode,
-                r.Visibility,
-                Place = new 
+                Visibility = r.Visibility,
+                Place = r.Place != null ? new 
                 {
                     r.Place.Id,
                     r.Place.Name,
                     r.Place.Description,
                     Latitude = r.Place.Location.Y,
                     Longitude = r.Place.Location.X
-                }
+                } : null
             });
 
             return Results.Ok(response);

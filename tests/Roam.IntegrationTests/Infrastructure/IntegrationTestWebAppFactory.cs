@@ -14,8 +14,7 @@ namespace Roam.IntegrationTests.Infrastructure;
 
 public class IntegrationTestWebAppFactory : WebApplicationFactory<Program>, IAsyncLifetime
 {
-    private readonly PostgreSqlContainer _dbContainer = new PostgreSqlBuilder()
-        .WithImage("postgis/postgis:15-3.3")
+    private readonly PostgreSqlContainer _dbContainer = new PostgreSqlBuilder("postgis/postgis:15-3.3")
         .WithDatabase("roam_test")
         .WithUsername("postgres")
         .WithPassword("postgres")

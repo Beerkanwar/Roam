@@ -249,7 +249,7 @@ public class TourRequestService : ITourRequestService
         var nearbyRequests = await _context.TourRequests
             .Include(r => r.Place) // Ensure Place data is loaded
             .Where(r => r.Status == TourRequestStatus.Published)
-            .Where(r => r.Place.Location.IsWithinDistance(userLocation.Location, radiusMeters))
+            .Where(r => r.Place != null && r.Place.Location.IsWithinDistance(userLocation.Location, radiusMeters))
             .AsNoTracking()
             .ToListAsync(cancellationToken);
 
