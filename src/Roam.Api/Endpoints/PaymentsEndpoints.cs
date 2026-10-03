@@ -14,6 +14,7 @@ public static class PaymentsEndpoints
     public static void MapPaymentsEndpoints(this IEndpointRouteBuilder app)
     {
         var group = app.MapGroup("/api/v{version:apiVersion}/payments")
+            .WithApiVersionSet(app.NewApiVersionSet().Build())
             .HasApiVersion(1, 0)
             .RequireAuthorization()
             .WithTags("Payments");
