@@ -6,15 +6,15 @@ services:
     container_name: roam-db
     restart: unless-stopped
     environment:
-      POSTGRES_USER: postgres
-      POSTGRES_PASSWORD: postgres
-      POSTGRES_DB: roam
+      POSTGRES_USER: ${POSTGRES_USER:-roam}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-roam}
+      POSTGRES_DB: ${POSTGRES_DB:-roam}
     ports:
-      - "5432:5432"
+      - "127.0.0.1:5433:5432"
     volumes:
       - pgdata:/var/lib/postgresql/data
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U postgres -d roam"]
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-roam} -d ${POSTGRES_DB:-roam}"]
       interval: 10s
       timeout: 5s
       retries: 5
@@ -24,7 +24,7 @@ services:
     container_name: roam-redis
     restart: unless-stopped
     ports:
-      - "6379:6379"
+      - "127.0.0.1:6379:6379"
     volumes:
       - redisdata:/data
     healthcheck:
@@ -43,10 +43,14 @@ services:
     command:
       - "-n"
       - "--log-file=stdout"
-      - "--min-port=49152"
-      - "--max-port=65535"
-      - "--realm=roam.local"
-      - "--static-auth-secret=roam-turn-static-secret-change-in-production-2026"
+      - "--use-auth-secret"
+      - "--static-auth-secret=${TURN_SECRET:-roam-turn-static-secret-change-in-production-2026}"
+      - "--realm=${TURN_REALM:-turn.example.com}"
+      - "--external-ip=${TURN_EXTERNAL_IP:-127.0.0.1}"
+      - "--no-tls"
+      - "--no-dtls"
+      - "--min-port=49160"
+      - "--max-port=49200"
 
   api:
     build:
@@ -55,13 +59,20 @@ services:
     container_name: roam-api
     restart: unless-stopped
     ports:
-      - "8080:8080"
+      - "127.0.0.1:8080:8080"
     environment:
-      ASPNETCORE_ENVIRONMENT: Development
-      ConnectionStrings__DefaultConnection: "Host=db;Port=5432;Database=roam;Username=postgres;Password=postgres"
-      ConnectionStrings__Redis: "redis:6379"
-      TurnServer__SharedSecret: "roam-turn-static-secret-change-in-production-2026"
-      TurnServer__Uris__0: "turn:localhost:3478"
+      ASPNETCORE_ENVIRONMENT: Production
+      ASPNETCORE_FORWARDEDHEADERS_ENABLED: "true"
+      ConnectionStrings__DefaultConnection: "Host=db;Port=5432;Database=${POSTGRES_DB:-roam};Username=${POSTGRES_USER:-roam};Password=${POSTGRES_PASSWORD:-roam}"
+      Cors__AllowedOrigins__0: "${PUBLIC_WEB_ORIGIN:-http://localhost:5173}"
+      TurnServer__Uris__0: "turn:${TURN_HOST:-127.0.0.1}:3478"
+      TurnServer__Password: "${TURN_SECRET:-roam-turn-static-secret-change-in-production-2026}"
+      AllowedHosts: "${PUBLIC_API_HOST:-*}"
+      BOOTSTRAP_ADMIN_EMAIL: "${BOOTSTRAP_ADMIN_EMAIL:-}"
+      BOOTSTRAP_ADMIN_PASSWORD: "${BOOTSTRAP_ADMIN_PASSWORD:-}"
+      BOOTSTRAP_VOLUNTEER_EMAILS: "${BOOTSTRAP_VOLUNTEER_EMAILS:-}"
+    volumes:
+      - dataprotection:/app/keys
     depends_on:
       db:
         condition: service_healthy
@@ -71,3 +82,4 @@ services:
 volumes:
   pgdata:
   redisdata:
+  dataprotection:

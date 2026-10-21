@@ -78,7 +78,7 @@ jobs:
           dotnet publish src/Roam.App/Roam.App.csproj -c Release -f net10.0-android \
             -p:AndroidPackageFormat=apk \
             -p:ApplicationDisplayVersion="$VERSION" \
-            -p:ApplicationVersion=1 \
+            -p:ApplicationVersion=${{ github.run_number }} \
             -o ./publish/android
           find ./publish/android -name "*.apk" -exec cp {} ./artifacts/Roam-Android-${VERSION}.apk \;
           if [ ! -f ./artifacts/Roam-Android-${VERSION}.apk ]; then
@@ -135,6 +135,8 @@ jobs:
 
       - name: Install dependencies and build
         working-directory: src/Roam.Web
+        env:
+          VITE_API_BASE_URL: ${{ vars.VITE_API_BASE_URL || 'https://api.example.com' }}
         run: |
           npm ci
           npm run build
