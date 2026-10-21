@@ -1,6 +1,145 @@
-@Roam.Api_HostAddress = http://localhost:5146
+@Roam.Api_HostAddress = https://localhost:7217
+@token = your_access_token_here
 
-GET {{Roam.Api_HostAddress}}/weatherforecast/
+### Health Check
+GET {{Roam.Api_HostAddress}}/health
 Accept: application/json
 
-###
+### Root Endpoint
+GET {{Roam.Api_HostAddress}}/
+Accept: application/json
+
+### Register User
+POST {{Roam.Api_HostAddress}}/register
+Content-Type: application/json
+
+{
+  "email": "user@example.com",
+  "password": "Password123!"
+}
+
+### Login User
+POST {{Roam.Api_HostAddress}}/login
+Content-Type: application/json
+
+{
+  "email": "user@example.com",
+  "password": "Password123!"
+}
+
+### User Onboarding (18+ Verification)
+POST {{Roam.Api_HostAddress}}/api/v1/profile/onboarding
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{
+  "displayName": "Alex Traveler",
+  "country": "United States",
+  "dateOfBirth": "1998-05-14"
+}
+
+### Search Places
+GET {{Roam.Api_HostAddress}}/api/v1/places/search?q=Central%20Park
+Authorization: Bearer {{token}}
+Accept: application/json
+
+### Create Tour Request (By Place ID)
+POST {{Roam.Api_HostAddress}}/api/v1/tour-requests
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{
+  "placeId": "place_guid_here",
+  "visibility": 1,
+  "mode": 0,
+  "description": "I would like a live tour around Central Park."
+}
+
+### Create Tour Request (By Coordinates)
+POST {{Roam.Api_HostAddress}}/api/v1/tour-requests/coordinates
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{
+  "latitude": 40.785091,
+  "longitude": -73.968285,
+  "visibility": 1,
+  "mode": 0,
+  "description": "Live tour near the reservoir."
+}
+
+### Get Nearby Tour Requests (Volunteers)
+GET {{Roam.Api_HostAddress}}/api/v1/tour-requests?radius=5000
+Authorization: Bearer {{token}}
+Accept: application/json
+
+### Accept Tour Request
+POST {{Roam.Api_HostAddress}}/api/v1/tour-requests/request_id_here/accept
+Authorization: Bearer {{token}}
+
+### Start Tour
+POST {{Roam.Api_HostAddress}}/api/v1/tour-requests/request_id_here/start
+Authorization: Bearer {{token}}
+
+### Complete Tour
+POST {{Roam.Api_HostAddress}}/api/v1/tour-requests/request_id_here/complete
+Authorization: Bearer {{token}}
+
+### Submit Feedback
+POST {{Roam.Api_HostAddress}}/api/v1/trust-safety/feedback
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{
+  "tourSessionId": "session_id_here",
+  "targetUserId": "user_id_here",
+  "rating": 1,
+  "comments": "Amazing live walk, very knowledgeable volunteer!"
+}
+
+### Submit Tip
+POST {{Roam.Api_HostAddress}}/api/v1/payments/tips
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{
+  "receiverId": "volunteer_id_here",
+  "amount": 10.00,
+  "currency": "USD",
+  "tourSessionId": "session_id_here",
+  "idempotencyKey": "tip-uuid-12345"
+}
+
+### Submit Donation
+POST {{Roam.Api_HostAddress}}/api/v1/payments/donations
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{
+  "amount": 25.00,
+  "currency": "USD",
+  "idempotencyKey": "donation-uuid-67890"
+}
+
+### Submit Trust & Safety Report
+POST {{Roam.Api_HostAddress}}/api/v1/trust-safety/reports
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{
+  "reportedUserId": "user_id_here",
+  "tourSessionId": "session_id_here",
+  "reason": 1,
+  "description": "Inappropriate content during session.",
+  "severity": 2
+}
+
+### Resolve Report (Admin Only)
+POST {{Roam.Api_HostAddress}}/api/v1/trust-safety/moderation/resolve/report_id_here
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{
+  "action": 2,
+  "reason": "Violated community guidelines with inappropriate content."
+}
