@@ -3,6 +3,9 @@ import * as signalR from '@microsoft/signalr';
 
 interface LiveSessionProps {
     sessionId: string;
+    token?: string;
+    targetUserId?: string;
+    onLeaveSession?: () => void;
 }
 
 interface ChatMessage {
@@ -13,9 +16,9 @@ interface ChatMessage {
     timestamp: string;
 }
 
-const API_BASE = 'https://localhost:7217'; // Update to the correct port if different
+const API_BASE = import.meta.env.VITE_API_BASE_URL || 'https://localhost:7217';
 
-const LiveSession: React.FC<LiveSessionProps> = ({ sessionId }) => {
+const LiveSession: React.FC<LiveSessionProps> = ({ sessionId, token, targetUserId, onLeaveSession }) => {
     const [tourConnection, setTourConnection] = useState<signalR.HubConnection | null>(null);
     const [chatConnection, setChatConnection] = useState<signalR.HubConnection | null>(null);
     const [logs, setLogs] = useState<string[]>([]);
@@ -24,12 +27,19 @@ const LiveSession: React.FC<LiveSessionProps> = ({ sessionId }) => {
     const [chatMessages, setChatMessages] = useState<ChatMessage[]>([]);
     const [chatInput, setChatInput] = useState('');
 
+    // Media controls state
+    const [isAudioMuted, setIsAudioMuted] = useState(false);
+    const [isVideoMuted, setIsVideoMuted] = useState(false);
+
     // WebRTC refs
     const peerConnection = useRef<RTCPeerConnection | null>(null);
     const localVideoRef = useRef<HTMLVideoElement>(null);
     const remoteVideoRef = useRef<HTMLVideoElement>(null);
+    const localStreamRef = useRef<MediaStream | null>(null);
 
     const log = (msg: string) => setLogs(prev => [...prev, msg]);
+
+    const authToken = token || localStorage.getItem('roam_token') || '';
 
     // Initialize WebRTC and SignalR
     useEffect(() => {
@@ -40,14 +50,16 @@ const LiveSession: React.FC<LiveSessionProps> = ({ sessionId }) => {
         const setup = async () => {
             try {
                 // 1. Fetch ICE Servers (TURN credentials)
-                const turnResponse = await fetch(`${API_BASE}/api/v1/ice-servers`);
+                const headers: HeadersInit = authToken ? { 'Authorization': `Bearer ${authToken}` } : {};
+                const turnResponse = await fetch(`${API_BASE}/api/v1/ice-servers`, { headers });
                 const turnData = await turnResponse.json();
                 
                 if (!isMounted) return;
 
-                // 2. Initialize RTCPeerConnection
+                // 2. Initialize RTCPeerConnection safely handling array or object
+                const iceServers = Array.isArray(turnData) ? turnData : (turnData.servers || []);
                 peerConnection.current = new RTCPeerConnection({
-                    iceServers: turnData.servers || []
+                    iceServers: iceServers
                 });
 
                 peerConnection.current.onicecandidate = (event) => {
@@ -67,22 +79,29 @@ const LiveSession: React.FC<LiveSessionProps> = ({ sessionId }) => {
                 // Get local camera
                 try {
                     const stream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
+                    localStreamRef.current = stream;
                     if (localVideoRef.current) {
                         localVideoRef.current.srcObject = stream;
                     }
                     stream.getTracks().forEach(track => peerConnection.current?.addTrack(track, stream));
-                } catch (e) {
+                } catch {
                     log('Could not get local camera access. You will be view-only.');
                 }
 
                 // 3. Initialize Tour Hub (Signaling)
                 tConnection = new signalR.HubConnectionBuilder()
-                    .withUrl(`${API_BASE}/hubs/tour`)
+                    .withUrl(`${API_BASE}/hubs/tour`, {
+                        accessTokenFactory: () => authToken
+                    })
                     .withAutomaticReconnect()
                     .build();
 
                 tConnection.on('ParticipantJoined', (connectionId: string) => {
                     log(`Participant joined: ${connectionId}`);
+                });
+
+                tConnection.on('ParticipantLeft', (connectionId: string) => {
+                    log(`Participant left: ${connectionId}`);
                 });
 
                 tConnection.on('ReceiveOffer', async (senderId: string, sdp: string) => {
@@ -127,7 +146,9 @@ const LiveSession: React.FC<LiveSessionProps> = ({ sessionId }) => {
 
                 // 4. Initialize Chat Hub
                 cConnection = new signalR.HubConnectionBuilder()
-                    .withUrl(`${API_BASE}/hubs/chat`)
+                    .withUrl(`${API_BASE}/hubs/chat`, {
+                        accessTokenFactory: () => authToken
+                    })
                     .withAutomaticReconnect()
                     .build();
 
@@ -149,11 +170,15 @@ const LiveSession: React.FC<LiveSessionProps> = ({ sessionId }) => {
 
         return () => {
             isMounted = false;
+            if (localStreamRef.current) {
+                localStreamRef.current.getTracks().forEach(track => track.stop());
+                localStreamRef.current = null;
+            }
             tConnection?.stop();
             cConnection?.stop();
             peerConnection.current?.close();
         };
-    }, [sessionId]);
+    }, [sessionId, authToken]);
 
     const handleCall = async () => {
         try {
@@ -166,6 +191,26 @@ const LiveSession: React.FC<LiveSessionProps> = ({ sessionId }) => {
             }
         } catch (e) {
             log(`Call Error: ${e}`);
+        }
+    };
+
+    const toggleAudio = () => {
+        if (localStreamRef.current) {
+            const audioTracks = localStreamRef.current.getAudioTracks();
+            audioTracks.forEach(t => {
+                t.enabled = !t.enabled;
+            });
+            setIsAudioMuted(prev => !prev);
+        }
+    };
+
+    const toggleVideo = () => {
+        if (localStreamRef.current) {
+            const videoTracks = localStreamRef.current.getVideoTracks();
+            videoTracks.forEach(t => {
+                t.enabled = !t.enabled;
+            });
+            setIsVideoMuted(prev => !prev);
         }
     };
 
@@ -182,15 +227,22 @@ const LiveSession: React.FC<LiveSessionProps> = ({ sessionId }) => {
     };
 
     const handleReport = async () => {
+        const reportedUser = targetUserId || prompt('Enter user ID to report:') || '';
+        if (!reportedUser.trim()) return;
+
         try {
+            const headers: HeadersInit = {
+                'Content-Type': 'application/json',
+                ...(authToken ? { 'Authorization': `Bearer ${authToken}` } : {})
+            };
             const response = await fetch(`${API_BASE}/api/v1/trust-safety/reports`, {
                 method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
+                headers,
                 body: JSON.stringify({
-                    reportedUserId: 'mock_volunteer_123',
+                    reportedUserId: reportedUser,
                     tourSessionId: sessionId,
                     reason: 2, // InappropriateContent
-                    description: 'Mock report submitted from UI.',
+                    description: 'Report submitted from live session.',
                     severity: 1 // Medium
                 })
             });
@@ -210,10 +262,17 @@ const LiveSession: React.FC<LiveSessionProps> = ({ sessionId }) => {
             {/* Left Pane: Video and Controls */}
             <div style={{ flex: '1', display: 'flex', flexDirection: 'column', gap: '15px' }}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                    <h2>Live Session: {sessionId}</h2>
-                    <button onClick={handleReport} style={{ padding: '8px 16px', backgroundColor: '#d13438', color: 'white', border: 'none', borderRadius: '4px', cursor: 'pointer' }}>
-                        Report User
-                    </button>
+                    <h2 style={{ margin: 0 }}>Live Session: {sessionId}</h2>
+                    <div style={{ display: 'flex', gap: '10px' }}>
+                        <button onClick={handleReport} style={{ padding: '8px 16px', backgroundColor: '#d13438', color: 'white', border: 'none', borderRadius: '4px', cursor: 'pointer' }}>
+                            Report User
+                        </button>
+                        {onLeaveSession && (
+                            <button onClick={onLeaveSession} style={{ padding: '8px 16px', backgroundColor: '#6c757d', color: 'white', border: 'none', borderRadius: '4px', cursor: 'pointer' }}>
+                                Leave Session
+                            </button>
+                        )}
+                    </div>
                 </div>
 
                 <div style={{ display: 'flex', gap: '10px' }}>
@@ -228,13 +287,19 @@ const LiveSession: React.FC<LiveSessionProps> = ({ sessionId }) => {
                 </div>
 
                 <div style={{ display: 'flex', gap: '10px' }}>
-                    <button onClick={handleCall} style={{ padding: '12px 24px', backgroundColor: '#512BD4', color: 'white', border: 'none', borderRadius: '4px', cursor: 'pointer', fontSize: '16px' }}>
+                    <button onClick={handleCall} style={{ padding: '10px 20px', backgroundColor: '#512BD4', color: 'white', border: 'none', borderRadius: '4px', cursor: 'pointer', fontSize: '14px' }}>
                         Start Call
+                    </button>
+                    <button onClick={toggleAudio} style={{ padding: '10px 20px', backgroundColor: isAudioMuted ? '#d13438' : '#28a745', color: 'white', border: 'none', borderRadius: '4px', cursor: 'pointer', fontSize: '14px' }}>
+                        {isAudioMuted ? 'Unmute Mic' : 'Mute Mic'}
+                    </button>
+                    <button onClick={toggleVideo} style={{ padding: '10px 20px', backgroundColor: isVideoMuted ? '#d13438' : '#28a745', color: 'white', border: 'none', borderRadius: '4px', cursor: 'pointer', fontSize: '14px' }}>
+                        {isVideoMuted ? 'Start Video' : 'Stop Video'}
                     </button>
                 </div>
 
                 <div style={{ backgroundColor: 'black', color: 'lime', padding: '10px', height: '150px', overflowY: 'auto', fontSize: '12px', fontFamily: 'monospace', borderRadius: '8px' }}>
-                    {logs.map((log, index) => <div key={index}>{log}</div>)}
+                    {logs.map((item, index) => <div key={index}>{item}</div>)}
                 </div>
             </div>
 

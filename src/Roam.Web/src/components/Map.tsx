@@ -64,6 +64,16 @@ const Map: React.FC<MapProps> = ({ onLocationSelected }) => {
                 onLocationSelected(e.lngLat.lat, e.lngLat.lng);
             }
         });
+
+        return () => {
+            if (currentMarker) {
+                currentMarker.remove();
+            }
+            if (map.current) {
+                map.current.remove();
+                map.current = null;
+            }
+        };
     }, [onLocationSelected]);
 
     return (

@@ -1,27 +1,33 @@
 using System;
-using System.Collections.ObjectModel;
 using System.Threading.Tasks;
 using Microsoft.AspNetCore.SignalR.Client;
 using Roam.Contracts.Chat;
 
 namespace Roam.App.Services;
 
-public class SignalRService
+public class SignalRService : IAsyncDisposable
 {
     private HubConnection? _tourHubConnection;
     private HubConnection? _chatHubConnection;
-    private readonly string _baseApiUrl = "http://localhost:5000"; // Update with actual API URL
+    private readonly string _baseApiUrl;
 
-    public event Action<string, string, string>? OnParticipantJoined;
-    public event Action<string, string>? OnParticipantLeft;
+    public event Action<string>? OnParticipantJoined;
+    public event Action<string>? OnParticipantLeft;
     public event Action<ChatMessageDto>? OnChatMessageReceived;
+
+    public SignalRService(string baseApiUrl = "https://localhost:7217")
+    {
+        _baseApiUrl = baseApiUrl;
+    }
 
     public async Task InitializeAsync(string token)
     {
+        await DisposeAsync();
+
         _tourHubConnection = new HubConnectionBuilder()
             .WithUrl($"{_baseApiUrl}/hubs/tour", options =>
             {
-                options.AccessTokenProvider = () => Task.FromResult(token)!;
+                options.AccessTokenProvider = () => Task.FromResult<string?>(token);
             })
             .WithAutomaticReconnect()
             .Build();
@@ -29,20 +35,20 @@ public class SignalRService
         _chatHubConnection = new HubConnectionBuilder()
             .WithUrl($"{_baseApiUrl}/hubs/chat", options =>
             {
-                options.AccessTokenProvider = () => Task.FromResult(token)!;
+                options.AccessTokenProvider = () => Task.FromResult<string?>(token);
             })
             .WithAutomaticReconnect()
             .Build();
 
         // Tour Hub Events
-        _tourHubConnection.On<string, string, string>("ParticipantJoined", (userId, role, timestamp) =>
+        _tourHubConnection.On<string>("ParticipantJoined", (connectionId) =>
         {
-            OnParticipantJoined?.Invoke(userId, role, timestamp);
+            OnParticipantJoined?.Invoke(connectionId);
         });
 
-        _tourHubConnection.On<string, string>("ParticipantLeft", (userId, timestamp) =>
+        _tourHubConnection.On<string>("ParticipantLeft", (connectionId) =>
         {
-            OnParticipantLeft?.Invoke(userId, timestamp);
+            OnParticipantLeft?.Invoke(connectionId);
         });
 
         // Chat Hub Events
@@ -86,6 +92,21 @@ public class SignalRService
         if (_chatHubConnection?.State == HubConnectionState.Connected)
         {
             await _chatHubConnection.InvokeAsync("SendMessage", sessionId, message);
+        }
+    }
+
+    public async ValueTask DisposeAsync()
+    {
+        if (_tourHubConnection != null)
+        {
+            await _tourHubConnection.DisposeAsync();
+            _tourHubConnection = null;
+        }
+
+        if (_chatHubConnection != null)
+        {
+            await _chatHubConnection.DisposeAsync();
+            _chatHubConnection = null;
         }
     }
 }

@@ -1,20 +1,24 @@
+using System;
+using System.Collections.Generic;
 using System.Collections.ObjectModel;
 using System.ComponentModel;
 using System.Runtime.CompilerServices;
 using System.Threading.Tasks;
 using System.Windows.Input;
+using Microsoft.Maui.ApplicationModel;
 using Microsoft.Maui.Controls;
 using Roam.App.Services;
 using Roam.Contracts.Chat;
 
 namespace Roam.App.ViewModels;
 
-public class LiveSessionViewModel : INotifyPropertyChanged
+public class LiveSessionViewModel : INotifyPropertyChanged, IAsyncDisposable
 {
     private readonly SignalRService _signalRService;
     private string _sessionId = string.Empty;
     private string _messageText = string.Empty;
     private string _statusText = "Not connected";
+    private string _authToken = string.Empty;
     
     public ObservableCollection<ChatMessageDto> ChatMessages { get; } = new();
     
@@ -35,24 +39,33 @@ public class LiveSessionViewModel : INotifyPropertyChanged
         get => _statusText;
         set => SetProperty(ref _statusText, value);
     }
+
+    public string AuthToken
+    {
+        get => _authToken;
+        set => SetProperty(ref _authToken, value);
+    }
     
     public ICommand JoinCommand { get; }
     public ICommand LeaveCommand { get; }
     public ICommand SendCommand { get; }
 
-    public LiveSessionViewModel()
+    public LiveSessionViewModel() : this(null)
     {
-        // Use dependency injection in a real app, instantiate directly for MVP
-        _signalRService = new SignalRService();
+    }
+
+    public LiveSessionViewModel(SignalRService? signalRService)
+    {
+        _signalRService = signalRService ?? new SignalRService();
         
-        _signalRService.OnParticipantJoined += (userId, role, time) => 
+        _signalRService.OnParticipantJoined += (connectionId) => 
         {
-            MainThread.BeginInvokeOnMainThread(() => StatusText = $"User {userId} joined as {role}");
+            MainThread.BeginInvokeOnMainThread(() => StatusText = $"Participant {connectionId} joined");
         };
         
-        _signalRService.OnParticipantLeft += (userId, time) => 
+        _signalRService.OnParticipantLeft += (connectionId) => 
         {
-            MainThread.BeginInvokeOnMainThread(() => StatusText = $"User {userId} left");
+            MainThread.BeginInvokeOnMainThread(() => StatusText = $"Participant {connectionId} left");
         };
 
         _signalRService.OnChatMessageReceived += (msg) => 
@@ -71,10 +84,8 @@ public class LiveSessionViewModel : INotifyPropertyChanged
         
         StatusText = "Connecting...";
         
-        // In a real application, you get the token from your auth service
-        string dummyToken = "your_jwt_token_here";
-        
-        await _signalRService.InitializeAsync(dummyToken);
+        var token = !string.IsNullOrWhiteSpace(AuthToken) ? AuthToken : string.Empty;
+        await _signalRService.InitializeAsync(token);
         await _signalRService.JoinSessionAsync(SessionId);
         
         StatusText = $"Connected to {SessionId}";
@@ -94,6 +105,11 @@ public class LiveSessionViewModel : INotifyPropertyChanged
         
         await _signalRService.SendChatMessageAsync(SessionId, MessageText);
         MessageText = string.Empty;
+    }
+
+    public async ValueTask DisposeAsync()
+    {
+        await _signalRService.DisposeAsync();
     }
 
     public event PropertyChangedEventHandler? PropertyChanged;
