@@ -17,6 +17,18 @@ public class TrustAndSafetyService : ITrustAndSafetyService
 
     public async Task<Report> SubmitReportAsync(CreateReportDto dto, CancellationToken cancellationToken = default)
     {
+        // Deduplicate: check if an identical pending report exists
+        bool alreadyPending = await _context.Reports.AnyAsync(r =>
+            r.ReporterId == dto.ReporterId &&
+            r.ReportedUserId == dto.ReportedUserId &&
+            r.TourSessionId == dto.TourSessionId &&
+            r.Status == ReportStatus.Pending, cancellationToken);
+
+        if (alreadyPending)
+        {
+            throw new InvalidOperationException("A report against this user for this session is already pending review.");
+        }
+
         var report = new Report
         {
             ReporterId = dto.ReporterId,
@@ -36,16 +48,9 @@ public class TrustAndSafetyService : ITrustAndSafetyService
             TargetUserId = dto.ReportedUserId
         };
         _context.ModerationCases.Add(moderationCase);
-        
-        // As a side-effect, we can log a reliability event against the reported user for tracking
-        var reliabilityEvent = new ReliabilityEvent
-        {
-            UserId = dto.ReportedUserId,
-            Type = ReliabilityEventType.ValidatedReport, // Assuming valid for MVP
-            RelatedSessionId = dto.TourSessionId,
-            Weight = -10 // Penalty
-        };
-        _context.ReliabilityEvents.Add(reliabilityEvent);
+
+        // Note: Reliability penalties are not applied on report submission.
+        // They are only applied after a confirmed moderation action in ResolveReportAsync.
 
         await _context.SaveChangesAsync(cancellationToken);
 
@@ -59,9 +64,9 @@ public class TrustAndSafetyService : ITrustAndSafetyService
             UserId = userId,
             Type = type,
             RelatedSessionId = sessionId,
-            Weight = weight
+            Weight = weight,
+            CreatedAt = DateTime.UtcNow
         };
-
         _context.ReliabilityEvents.Add(ev);
         await _context.SaveChangesAsync(cancellationToken);
     }
@@ -70,29 +75,30 @@ public class TrustAndSafetyService : ITrustAndSafetyService
     {
         var events = await _context.ReliabilityEvents
             .Where(e => e.UserId == userId)
+            .OrderByDescending(e => e.CreatedAt)
+            .Take(50)
             .ToListAsync(cancellationToken);
 
-        int completedTours = events.Count(e => e.Type == ReliabilityEventType.CompletedTour);
-        int totalScore = events.Sum(e => e.Weight);
+        var score = events.Sum(e => e.Weight);
 
-        // Map internal score to a public-facing description
-        string feedbackLevel = totalScore >= 0 ? "Positive" : "Needs Improvement";
-
-        return $"{completedTours} tours completed. Community feedback: {feedbackLevel}.";
+        return score switch
+        {
+            >= 50 => "Trusted",
+            >= 10 => "Normal",
+            _ => "Needs Improvement"
+        };
     }
 
     public async Task BlockUserAsync(string blockerId, string blockedId, CancellationToken cancellationToken = default)
     {
+        if (blockerId == blockedId) return;
+
         var exists = await _context.UserBlocks
             .AnyAsync(ub => ub.BlockerId == blockerId && ub.BlockedId == blockedId, cancellationToken);
-            
+
         if (!exists)
         {
-            _context.UserBlocks.Add(new UserBlock
-            {
-                BlockerId = blockerId,
-                BlockedId = blockedId
-            });
+            _context.UserBlocks.Add(new UserBlock(blockerId, blockedId));
             await _context.SaveChangesAsync(cancellationToken);
         }
     }
@@ -101,7 +107,7 @@ public class TrustAndSafetyService : ITrustAndSafetyService
     {
         var block = await _context.UserBlocks
             .FirstOrDefaultAsync(ub => ub.BlockerId == blockerId && ub.BlockedId == blockedId, cancellationToken);
-            
+
         if (block != null)
         {
             _context.UserBlocks.Remove(block);
@@ -124,8 +130,15 @@ public class TrustAndSafetyService : ITrustAndSafetyService
         
         var modCase = await _context.ModerationCases.FirstOrDefaultAsync(m => m.ReportId == reportId, cancellationToken);
         if (modCase == null) throw new ArgumentException("Moderation case not found.");
+
+        // Idempotency check: if report or case is already resolved/closed, do not re-process
+        if (report.Status != ReportStatus.Pending || modCase.Status == ModerationCaseStatus.Closed)
+        {
+            return;
+        }
         
         report.Status = action == ModerationAction.NoAction ? ReportStatus.Dismissed : ReportStatus.ActionTaken;
+        report.ResolvedAt = DateTime.UtcNow;
         modCase.Status = ModerationCaseStatus.Closed;
         modCase.ClosedAt = DateTime.UtcNow;
         
@@ -139,18 +152,42 @@ public class TrustAndSafetyService : ITrustAndSafetyService
         };
         _context.ModerationAuditLogs.Add(auditLog);
         
-        // Apply user status changes
+        // Apply user status changes and rotate security stamp
         var targetUser = await _context.Users.FirstOrDefaultAsync(u => u.Id == modCase.TargetUserId, cancellationToken);
         if (targetUser != null)
         {
             if (action == ModerationAction.Suspension)
             {
                 targetUser.AccountStatus = AccountStatus.Suspended;
+                targetUser.SecurityStamp = Guid.NewGuid().ToString();
             }
             else if (action == ModerationAction.PermanentRemoval)
             {
                 targetUser.AccountStatus = AccountStatus.Banned;
+                targetUser.SecurityStamp = Guid.NewGuid().ToString();
             }
+        }
+
+        // Apply reliability penalties only upon verified adverse action
+        if (action != ModerationAction.NoAction)
+        {
+            int penaltyWeight = action switch
+            {
+                ModerationAction.Warning => -5,
+                ModerationAction.Suspension => -15,
+                ModerationAction.PermanentRemoval => -30,
+                _ => -10
+            };
+
+            var reliabilityEvent = new ReliabilityEvent
+            {
+                UserId = modCase.TargetUserId,
+                Type = ReliabilityEventType.ValidatedReport,
+                RelatedSessionId = report.TourSessionId,
+                Weight = penaltyWeight,
+                CreatedAt = DateTime.UtcNow
+            };
+            _context.ReliabilityEvents.Add(reliabilityEvent);
         }
         
         await _context.SaveChangesAsync(cancellationToken);

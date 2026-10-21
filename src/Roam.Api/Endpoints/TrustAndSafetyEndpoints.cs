@@ -50,22 +50,27 @@ public static class TrustAndSafetyEndpoints
             return Results.Ok(blocks);
         });
 
-        // Moderation endpoints (Admin)
-        group.MapPost("/moderation/resolve/{reportId}", async (string reportId, [FromBody] ResolveReportRequest request, ClaimsPrincipal user, ITrustAndSafetyService service, CancellationToken cancellationToken) =>
+        // Moderation endpoints (Admin only)
+        group.MapPost("/moderation/resolve/{reportId}", async (string reportId, [FromBody] ResolveReportRequest request, HttpContext httpContext, ClaimsPrincipal user, ITrustAndSafetyService service, CancellationToken cancellationToken) =>
         {
             var moderatorId = user.FindFirstValue(ClaimTypes.NameIdentifier) ?? throw new InvalidOperationException("User ID missing.");
-            // Note: Should have RequireAuthorization("RequireAdminRole") here in a real production environment.
+            var clientIp = httpContext.Connection.RemoteIpAddress?.ToString() ?? "unknown";
             
             try
             {
-                await service.ResolveReportAsync(reportId, request.Action, moderatorId, request.Reason, cancellationToken);
+                var auditReason = string.IsNullOrWhiteSpace(request.Reason) 
+                    ? $"Moderated via API (IP: {clientIp})" 
+                    : $"{request.Reason} (IP: {clientIp})";
+
+                await service.ResolveReportAsync(reportId, request.Action, moderatorId, auditReason, cancellationToken);
                 return Results.Ok();
             }
             catch (ArgumentException ex)
             {
                 return Results.BadRequest(new { error = ex.Message });
             }
-        });
+        })
+        .RequireAuthorization("RequireAdminRole");
         group.MapPost("/feedback", async ([FromBody] SubmitFeedbackRequest request, [FromServices] IFeedbackService feedbackService, ClaimsPrincipal user) => 
         {
             var reviewerId = user.FindFirstValue(ClaimTypes.NameIdentifier);
