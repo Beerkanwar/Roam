@@ -1,11 +1,11 @@
+using System;
+using System.Security.Claims;
+using System.Threading.Tasks;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Http;
-using Microsoft.AspNetCore.Routing;
 using Microsoft.AspNetCore.Mvc;
-using System.Security.Claims;
+using Microsoft.AspNetCore.Routing;
 using Roam.Application.Payments;
-using System.Threading.Tasks;
-using System;
 
 namespace Roam.Api.Endpoints;
 
@@ -13,9 +13,7 @@ public static class PaymentsEndpoints
 {
     public static void MapPaymentsEndpoints(this IEndpointRouteBuilder app)
     {
-        var group = app.MapGroup("/api/v{version:apiVersion}/payments")
-            .WithApiVersionSet(app.NewApiVersionSet().Build())
-            .HasApiVersion(1, 0)
+        var group = app.MapGroup("/api/v1/payments")
             .RequireAuthorization()
             .WithTags("Payments");
 
@@ -24,12 +22,30 @@ public static class PaymentsEndpoints
             [FromServices] IPaymentService paymentService,
             ClaimsPrincipal user) =>
         {
-            var senderIdStr = user.FindFirstValue(ClaimTypes.NameIdentifier);
-            if (!Guid.TryParse(senderIdStr, out var senderId))
+            var senderId = user.FindFirstValue(ClaimTypes.NameIdentifier);
+            if (string.IsNullOrEmpty(senderId))
                 return Results.Unauthorized();
 
-            var tip = await paymentService.SubmitTipAsync(senderId, request.ReceiverId, request.Amount, request.Currency, request.TourSessionId);
-            return Results.Ok(new { tip.Id, tip.Status });
+            try
+            {
+                var tip = await paymentService.SubmitTipAsync(
+                    senderId, 
+                    request.ReceiverId, 
+                    request.Amount, 
+                    request.Currency, 
+                    request.TourSessionId, 
+                    request.IdempotencyKey);
+
+                return Results.Ok(new { tip.Id, tip.Status, tip.Amount, tip.Currency });
+            }
+            catch (ArgumentException ex)
+            {
+                return Results.BadRequest(new { error = ex.Message });
+            }
+            catch (InvalidOperationException ex)
+            {
+                return Results.BadRequest(new { error = ex.Message });
+            }
         })
         .WithName("SubmitTip")
         .WithSummary("Submit a tip to a volunteer");
@@ -39,11 +55,22 @@ public static class PaymentsEndpoints
             [FromServices] IPaymentService paymentService,
             ClaimsPrincipal user) =>
         {
-            var donorIdStr = user.FindFirstValue(ClaimTypes.NameIdentifier);
-            Guid? donorId = Guid.TryParse(donorIdStr, out var id) ? id : null;
+            var donorId = user.FindFirstValue(ClaimTypes.NameIdentifier);
 
-            var donation = await paymentService.SubmitDonationAsync(request.Amount, request.Currency, donorId);
-            return Results.Ok(new { donation.Id, donation.Status });
+            try
+            {
+                var donation = await paymentService.SubmitDonationAsync(
+                    request.Amount, 
+                    request.Currency, 
+                    donorId, 
+                    request.IdempotencyKey);
+
+                return Results.Ok(new { donation.Id, donation.Status, donation.Amount, donation.Currency });
+            }
+            catch (ArgumentException ex)
+            {
+                return Results.BadRequest(new { error = ex.Message });
+            }
         })
         .WithName("SubmitDonation")
         .WithSummary("Submit a donation to the platform");
@@ -52,14 +79,16 @@ public static class PaymentsEndpoints
 
 public class SubmitTipRequest
 {
-    public Guid ReceiverId { get; set; }
+    public string ReceiverId { get; set; } = string.Empty;
     public decimal Amount { get; set; }
     public string Currency { get; set; } = "USD";
-    public Guid? TourSessionId { get; set; }
+    public string? TourSessionId { get; set; }
+    public string? IdempotencyKey { get; set; }
 }
 
 public class SubmitDonationRequest
 {
     public decimal Amount { get; set; }
     public string Currency { get; set; } = "USD";
+    public string? IdempotencyKey { get; set; }
 }

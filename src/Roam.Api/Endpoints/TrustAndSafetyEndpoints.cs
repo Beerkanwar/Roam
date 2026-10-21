@@ -68,11 +68,17 @@ public static class TrustAndSafetyEndpoints
         });
         group.MapPost("/feedback", async ([FromBody] SubmitFeedbackRequest request, [FromServices] IFeedbackService feedbackService, ClaimsPrincipal user) => 
         {
-            var reviewerIdStr = user.FindFirstValue(ClaimTypes.NameIdentifier);
-            if (!Guid.TryParse(reviewerIdStr, out var reviewerId)) return Results.Unauthorized();
+            var reviewerId = user.FindFirstValue(ClaimTypes.NameIdentifier);
+            if (string.IsNullOrEmpty(reviewerId)) return Results.Unauthorized();
 
-            var feedback = await feedbackService.SubmitFeedbackAsync(request.TourSessionId, reviewerId, request.TargetUserId, request.Rating, request.Comments);
-            return Results.Ok(new { feedback.Id, feedback.Rating });
+            try
+            {
+                var feedback = await feedbackService.SubmitFeedbackAsync(request.TourSessionId, reviewerId, request.TargetUserId, request.Rating, request.Comments);
+                return Results.Ok(new { feedback.Id, feedback.Rating });
+            }
+            catch (ArgumentException ex) { return Results.BadRequest(new { error = ex.Message }); }
+            catch (InvalidOperationException ex) { return Results.BadRequest(new { error = ex.Message }); }
+            catch (UnauthorizedAccessException) { return Results.Forbid(); }
         })
         .WithName("SubmitFeedback")
         .WithSummary("Submit post-session feedback");
@@ -81,8 +87,8 @@ public static class TrustAndSafetyEndpoints
 
 public class SubmitFeedbackRequest
 {
-    public Guid TourSessionId { get; set; }
-    public Guid TargetUserId { get; set; }
+    public string TourSessionId { get; set; } = string.Empty;
+    public string TargetUserId { get; set; } = string.Empty;
     public FeedbackRating Rating { get; set; }
     public string? Comments { get; set; }
 }

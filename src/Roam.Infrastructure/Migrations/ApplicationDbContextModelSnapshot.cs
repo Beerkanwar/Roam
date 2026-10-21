@@ -190,27 +190,37 @@ namespace Roam.Infrastructure.Migrations
 
             modelBuilder.Entity("Roam.Domain.Payments.Donation", b =>
                 {
-                    b.Property<Guid>("Id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("uuid");
+                    b.Property<string>("Id")
+                        .HasColumnType("text");
 
                     b.Property<decimal>("Amount")
-                        .HasColumnType("numeric");
+                        .HasPrecision(18, 2)
+                        .HasColumnType("numeric(18,2)");
 
                     b.Property<DateTime>("CreatedAt")
                         .HasColumnType("timestamp with time zone");
 
                     b.Property<string>("Currency")
                         .IsRequired()
+                        .HasMaxLength(3)
+                        .HasColumnType("character varying(3)");
+
+                    b.Property<string>("DonorId")
                         .HasColumnType("text");
 
-                    b.Property<Guid?>("DonorId")
-                        .HasColumnType("uuid");
+                    b.Property<string>("IdempotencyKey")
+                        .HasColumnType("text");
 
                     b.Property<int>("Status")
                         .HasColumnType("integer");
 
                     b.HasKey("Id");
+
+                    b.HasIndex("CreatedAt");
+
+                    b.HasIndex("DonorId");
+
+                    b.HasIndex("IdempotencyKey");
 
                     b.ToTable("Donations");
                 });
@@ -238,33 +248,49 @@ namespace Roam.Infrastructure.Migrations
 
             modelBuilder.Entity("Roam.Domain.Payments.TipTransaction", b =>
                 {
-                    b.Property<Guid>("Id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("uuid");
+                    b.Property<string>("Id")
+                        .HasColumnType("text");
 
                     b.Property<decimal>("Amount")
-                        .HasColumnType("numeric");
+                        .HasPrecision(18, 2)
+                        .HasColumnType("numeric(18,2)");
 
                     b.Property<DateTime>("CreatedAt")
                         .HasColumnType("timestamp with time zone");
 
                     b.Property<string>("Currency")
                         .IsRequired()
+                        .HasMaxLength(3)
+                        .HasColumnType("character varying(3)");
+
+                    b.Property<string>("IdempotencyKey")
                         .HasColumnType("text");
 
-                    b.Property<Guid>("ReceiverId")
-                        .HasColumnType("uuid");
+                    b.Property<string>("ReceiverId")
+                        .IsRequired()
+                        .HasColumnType("text");
 
-                    b.Property<Guid>("SenderId")
-                        .HasColumnType("uuid");
+                    b.Property<string>("SenderId")
+                        .IsRequired()
+                        .HasColumnType("text");
 
                     b.Property<int>("Status")
                         .HasColumnType("integer");
 
-                    b.Property<Guid?>("TourSessionId")
-                        .HasColumnType("uuid");
+                    b.Property<string>("TourSessionId")
+                        .HasColumnType("text");
 
                     b.HasKey("Id");
+
+                    b.HasIndex("CreatedAt");
+
+                    b.HasIndex("IdempotencyKey");
+
+                    b.HasIndex("ReceiverId");
+
+                    b.HasIndex("SenderId");
+
+                    b.HasIndex("TourSessionId");
 
                     b.ToTable("TipTransactions");
                 });
@@ -326,6 +352,9 @@ namespace Roam.Infrastructure.Migrations
 
                     NpgsqlIndexBuilderExtensions.HasMethod(b.HasIndex("Location"), "gist");
 
+                    b.HasIndex("UserId")
+                        .IsUnique();
+
                     b.ToTable("UserLocations");
                 });
 
@@ -374,6 +403,14 @@ namespace Roam.Infrastructure.Migrations
 
                     b.HasKey("Id");
 
+                    b.HasIndex("ProposedByUserId");
+
+                    b.HasIndex("ProposedStartUtc");
+
+                    b.HasIndex("Status");
+
+                    b.HasIndex("TourRequestId");
+
                     b.ToTable("ScheduledTours");
                 });
 
@@ -399,7 +436,8 @@ namespace Roam.Infrastructure.Migrations
 
                     b.Property<string>("Description")
                         .IsRequired()
-                        .HasColumnType("text");
+                        .HasMaxLength(2000)
+                        .HasColumnType("character varying(2000)");
 
                     b.Property<DateTime?>("ExpiresAt")
                         .HasColumnType("timestamp with time zone");
@@ -429,7 +467,15 @@ namespace Roam.Infrastructure.Migrations
 
                     b.HasKey("Id");
 
+                    b.HasIndex("AssignedVolunteerId");
+
+                    b.HasIndex("CreatedAt");
+
                     b.HasIndex("PlaceId");
+
+                    b.HasIndex("RequesterId");
+
+                    b.HasIndex("Status", "ExpiresAt");
 
                     b.ToTable("TourRequests");
                 });
@@ -462,7 +508,10 @@ namespace Roam.Infrastructure.Migrations
 
                     b.HasKey("Id");
 
-                    b.HasIndex("TourSessionId");
+                    b.HasIndex("UserId");
+
+                    b.HasIndex("TourSessionId", "UserId")
+                        .IsUnique();
 
                     b.ToTable("TourParticipants");
                 });
@@ -498,17 +547,25 @@ namespace Roam.Infrastructure.Migrations
 
                     b.HasKey("Id");
 
+                    b.HasIndex("HostVolunteerId");
+
+                    b.HasIndex("StartedAt");
+
+                    b.HasIndex("Status");
+
+                    b.HasIndex("TourRequestId");
+
                     b.ToTable("TourSessions");
                 });
 
             modelBuilder.Entity("Roam.Domain.TrustAndSafety.Feedback", b =>
                 {
-                    b.Property<Guid>("Id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("uuid");
+                    b.Property<string>("Id")
+                        .HasColumnType("text");
 
                     b.Property<string>("Comments")
-                        .HasColumnType("text");
+                        .HasMaxLength(2000)
+                        .HasColumnType("character varying(2000)");
 
                     b.Property<DateTime>("CreatedAt")
                         .HasColumnType("timestamp with time zone");
@@ -516,16 +573,28 @@ namespace Roam.Infrastructure.Migrations
                     b.Property<int>("Rating")
                         .HasColumnType("integer");
 
-                    b.Property<Guid>("ReviewerId")
-                        .HasColumnType("uuid");
+                    b.Property<string>("ReviewerId")
+                        .IsRequired()
+                        .HasColumnType("text");
 
-                    b.Property<Guid>("TargetUserId")
-                        .HasColumnType("uuid");
+                    b.Property<string>("TargetUserId")
+                        .IsRequired()
+                        .HasColumnType("text");
 
-                    b.Property<Guid>("TourSessionId")
-                        .HasColumnType("uuid");
+                    b.Property<string>("TourSessionId")
+                        .IsRequired()
+                        .HasColumnType("text");
 
                     b.HasKey("Id");
+
+                    b.HasIndex("CreatedAt");
+
+                    b.HasIndex("ReviewerId");
+
+                    b.HasIndex("TargetUserId");
+
+                    b.HasIndex("TourSessionId", "ReviewerId", "TargetUserId")
+                        .IsUnique();
 
                     b.ToTable("Feedbacks");
                 });
@@ -625,6 +694,14 @@ namespace Roam.Infrastructure.Migrations
 
                     b.HasKey("Id");
 
+                    b.HasIndex("CreatedAt");
+
+                    b.HasIndex("RelatedSessionId");
+
+                    b.HasIndex("Type");
+
+                    b.HasIndex("UserId");
+
                     b.ToTable("ReliabilityEvents");
                 });
 
@@ -638,7 +715,8 @@ namespace Roam.Infrastructure.Migrations
 
                     b.Property<string>("Description")
                         .IsRequired()
-                        .HasColumnType("text");
+                        .HasMaxLength(2000)
+                        .HasColumnType("character varying(2000)");
 
                     b.Property<int>("Reason")
                         .HasColumnType("integer");
@@ -665,6 +743,16 @@ namespace Roam.Infrastructure.Migrations
                         .HasColumnType("text");
 
                     b.HasKey("Id");
+
+                    b.HasIndex("CreatedAt");
+
+                    b.HasIndex("ReportedUserId");
+
+                    b.HasIndex("ReporterId");
+
+                    b.HasIndex("Status");
+
+                    b.HasIndex("TourSessionId");
 
                     b.ToTable("Reports");
                 });
@@ -875,7 +963,7 @@ namespace Roam.Infrastructure.Migrations
                     b.HasOne("Roam.Domain.Users.ApplicationUser", null)
                         .WithMany()
                         .HasForeignKey("SenderId")
-                        .OnDelete(DeleteBehavior.SetNull)
+                        .OnDelete(DeleteBehavior.Restrict)
                         .IsRequired();
 
                     b.HasOne("Roam.Domain.TourSessions.TourSession", null)
@@ -885,12 +973,75 @@ namespace Roam.Infrastructure.Migrations
                         .IsRequired();
                 });
 
+            modelBuilder.Entity("Roam.Domain.Payments.Donation", b =>
+                {
+                    b.HasOne("Roam.Domain.Users.ApplicationUser", null)
+                        .WithMany()
+                        .HasForeignKey("DonorId")
+                        .OnDelete(DeleteBehavior.SetNull);
+                });
+
+            modelBuilder.Entity("Roam.Domain.Payments.TipTransaction", b =>
+                {
+                    b.HasOne("Roam.Domain.Users.ApplicationUser", null)
+                        .WithMany()
+                        .HasForeignKey("ReceiverId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("Roam.Domain.Users.ApplicationUser", null)
+                        .WithMany()
+                        .HasForeignKey("SenderId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("Roam.Domain.TourSessions.TourSession", null)
+                        .WithMany()
+                        .HasForeignKey("TourSessionId")
+                        .OnDelete(DeleteBehavior.SetNull);
+                });
+
+            modelBuilder.Entity("Roam.Domain.Places.UserLocation", b =>
+                {
+                    b.HasOne("Roam.Domain.Users.ApplicationUser", null)
+                        .WithMany()
+                        .HasForeignKey("UserId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+                });
+
+            modelBuilder.Entity("Roam.Domain.TourRequests.ScheduledTour", b =>
+                {
+                    b.HasOne("Roam.Domain.Users.ApplicationUser", null)
+                        .WithMany()
+                        .HasForeignKey("ProposedByUserId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("Roam.Domain.TourRequests.TourRequest", null)
+                        .WithMany()
+                        .HasForeignKey("TourRequestId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+                });
+
             modelBuilder.Entity("Roam.Domain.TourRequests.TourRequest", b =>
                 {
+                    b.HasOne("Roam.Domain.Users.ApplicationUser", null)
+                        .WithMany()
+                        .HasForeignKey("AssignedVolunteerId")
+                        .OnDelete(DeleteBehavior.SetNull);
+
                     b.HasOne("Roam.Domain.Places.Place", "Place")
                         .WithMany()
                         .HasForeignKey("PlaceId")
-                        .OnDelete(DeleteBehavior.Cascade)
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("Roam.Domain.Users.ApplicationUser", null)
+                        .WithMany()
+                        .HasForeignKey("RequesterId")
+                        .OnDelete(DeleteBehavior.Restrict)
                         .IsRequired();
 
                     b.Navigation("Place");
@@ -902,6 +1053,48 @@ namespace Roam.Infrastructure.Migrations
                         .WithMany("Participants")
                         .HasForeignKey("TourSessionId")
                         .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.HasOne("Roam.Domain.Users.ApplicationUser", null)
+                        .WithMany()
+                        .HasForeignKey("UserId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+                });
+
+            modelBuilder.Entity("Roam.Domain.TourSessions.TourSession", b =>
+                {
+                    b.HasOne("Roam.Domain.Users.ApplicationUser", null)
+                        .WithMany()
+                        .HasForeignKey("HostVolunteerId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("Roam.Domain.TourRequests.TourRequest", null)
+                        .WithMany()
+                        .HasForeignKey("TourRequestId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+                });
+
+            modelBuilder.Entity("Roam.Domain.TrustAndSafety.Feedback", b =>
+                {
+                    b.HasOne("Roam.Domain.Users.ApplicationUser", null)
+                        .WithMany()
+                        .HasForeignKey("ReviewerId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("Roam.Domain.Users.ApplicationUser", null)
+                        .WithMany()
+                        .HasForeignKey("TargetUserId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("Roam.Domain.TourSessions.TourSession", null)
+                        .WithMany()
+                        .HasForeignKey("TourSessionId")
+                        .OnDelete(DeleteBehavior.Restrict)
                         .IsRequired();
                 });
 
@@ -916,7 +1109,7 @@ namespace Roam.Infrastructure.Migrations
                     b.HasOne("Roam.Domain.Users.ApplicationUser", null)
                         .WithMany()
                         .HasForeignKey("ModeratorId")
-                        .OnDelete(DeleteBehavior.SetNull)
+                        .OnDelete(DeleteBehavior.Restrict)
                         .IsRequired();
 
                     b.HasOne("Roam.Domain.Users.ApplicationUser", null)
@@ -937,6 +1130,30 @@ namespace Roam.Infrastructure.Migrations
                         .WithMany()
                         .HasForeignKey("TargetUserId")
                         .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+                });
+
+            modelBuilder.Entity("Roam.Domain.TrustAndSafety.ReliabilityEvent", b =>
+                {
+                    b.HasOne("Roam.Domain.Users.ApplicationUser", null)
+                        .WithMany()
+                        .HasForeignKey("UserId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+                });
+
+            modelBuilder.Entity("Roam.Domain.TrustAndSafety.Report", b =>
+                {
+                    b.HasOne("Roam.Domain.Users.ApplicationUser", null)
+                        .WithMany()
+                        .HasForeignKey("ReportedUserId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("Roam.Domain.Users.ApplicationUser", null)
+                        .WithMany()
+                        .HasForeignKey("ReporterId")
+                        .OnDelete(DeleteBehavior.Restrict)
                         .IsRequired();
                 });
 

@@ -24,7 +24,7 @@ public class ModerationAuditLogConfiguration : IEntityTypeConfiguration<Moderati
         builder.HasOne<Roam.Domain.Users.ApplicationUser>()
             .WithMany()
             .HasForeignKey(l => l.ModeratorId)
-            .OnDelete(DeleteBehavior.SetNull);
+            .OnDelete(DeleteBehavior.Restrict);
             
         builder.HasOne<ModerationCase>()
             .WithMany()

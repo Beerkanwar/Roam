@@ -25,6 +25,6 @@ public class ChatMessageConfiguration : IEntityTypeConfiguration<ChatMessage>
         builder.HasOne<Roam.Domain.Users.ApplicationUser>()
             .WithMany()
             .HasForeignKey(c => c.SenderId)
-            .OnDelete(DeleteBehavior.SetNull);
+            .OnDelete(DeleteBehavior.Restrict);
     }
 }

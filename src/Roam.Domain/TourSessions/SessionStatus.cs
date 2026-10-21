@@ -4,5 +4,6 @@ public enum SessionStatus
 {
     Starting,
     Active,
-    Ended
+    Ended,
+    Completed = Ended
 }
