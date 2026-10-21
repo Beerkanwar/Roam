@@ -21,6 +21,21 @@ public class CreateTourRequestByCoordinatesDto
     public string Description { get; set; } = string.Empty;
 }
 
+public class TourRequestResponseDto
+{
+    public string Id { get; set; } = string.Empty;
+    public string RequesterId { get; set; } = string.Empty;
+    public string? PlaceId { get; set; }
+    public int Status { get; set; }
+    public string StatusName { get; set; } = string.Empty;
+    public int Visibility { get; set; }
+    public int Mode { get; set; }
+    public string Description { get; set; } = string.Empty;
+    public DateTime CreatedAt { get; set; }
+    public DateTime? ExpiresAt { get; set; }
+    public string? AssignedVolunteerId { get; set; }
+}
+
 public interface ITourRequestService
 {
     Task<TourRequest> CreateRequestAsync(CreateTourRequestDto dto, CancellationToken cancellationToken = default);

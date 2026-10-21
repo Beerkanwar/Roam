@@ -28,6 +28,10 @@ public class TourRequestService : ITourRequestService
 
     public async Task<TourRequest> CreateRequestAsync(CreateTourRequestDto dto, CancellationToken cancellationToken = default)
     {
+        var placeExists = await _context.Places.AnyAsync(p => p.Id == dto.PlaceId, cancellationToken);
+        if (!placeExists)
+            throw new ArgumentException("The specified place was not found.", nameof(dto.PlaceId));
+
         var expiresAt = dto.Mode == SchedulingMode.Instant 
             ? DateTime.UtcNow.AddHours(24) 
             : DateTime.UtcNow.AddDays(7);
@@ -53,15 +57,30 @@ public class TourRequestService : ITourRequestService
 
     public async Task<TourRequest> CreateRequestByCoordinatesAsync(CreateTourRequestByCoordinatesDto dto, CancellationToken cancellationToken = default)
     {
-        var place = new Place
-        {
-            Name = "Custom Location",
-            Description = "Requested at specific coordinates",
-            Location = new NetTopologySuite.Geometries.Point(dto.Longitude, dto.Latitude) { SRID = 4326 }
-        };
+        var location = new NetTopologySuite.Geometries.Point(dto.Longitude, dto.Latitude) { SRID = 4326 };
 
-        _context.Places.Add(place);
-        await _context.SaveChangesAsync(cancellationToken);
+        // Reuse an existing place within ~50 meters if one already exists
+        var existingPlace = await _context.Places
+            .Where(p => p.Location.IsWithinDistance(location, 0.0005))
+            .FirstOrDefaultAsync(cancellationToken);
+
+        string placeId;
+        if (existingPlace != null)
+        {
+            placeId = existingPlace.Id;
+        }
+        else
+        {
+            var place = new Place
+            {
+                Name = $"Location ({dto.Latitude:F4}, {dto.Longitude:F4})",
+                Description = "Custom requested location",
+                Location = location
+            };
+            _context.Places.Add(place);
+            await _context.SaveChangesAsync(cancellationToken);
+            placeId = place.Id;
+        }
 
         var expiresAt = dto.Mode == SchedulingMode.Instant 
             ? DateTime.UtcNow.AddHours(24) 
@@ -70,7 +89,7 @@ public class TourRequestService : ITourRequestService
         var request = new TourRequest
         {
             RequesterId = dto.RequesterId,
-            PlaceId = place.Id,
+            PlaceId = placeId,
             Visibility = dto.Visibility,
             Mode = dto.Mode,
             Description = dto.Description,
@@ -109,9 +128,19 @@ public class TourRequestService : ITourRequestService
         if (isBlocked)
             throw new InvalidOperationException("Cannot accept a tour request from a blocked user.");
 
-        request.TransitionTo(TourRequestStatus.Accepted);
-        request.AssignedVolunteerId = volunteerId;
-        await _context.SaveChangesAsync(cancellationToken);
+        // 4. Atomic conditional update to prevent race conditions
+        var rowsAffected = await _context.TourRequests
+            .Where(r => r.Id == id && 
+                       (r.Status == TourRequestStatus.Published || r.Status == TourRequestStatus.VolunteerInterested) && 
+                       (r.AssignedVolunteerId == null || r.AssignedVolunteerId == volunteerId))
+            .ExecuteUpdateAsync(s => s
+                .SetProperty(r => r.Status, TourRequestStatus.Accepted)
+                .SetProperty(r => r.AssignedVolunteerId, volunteerId), cancellationToken);
+
+        if (rowsAffected == 0)
+        {
+            throw new InvalidOperationException("Tour request was already accepted by another volunteer.");
+        }
 
         await _notificationService.TourRequestAcceptedAsync(id, volunteerId, request.RequesterId);
         
@@ -285,7 +314,7 @@ public class TourRequestService : ITourRequestService
         _context.TourSessions.Add(session);
         await _context.SaveChangesAsync(cancellationToken);
 
-        await _notificationService.TourStartingAsync(session.Id);
+        await _notificationService.TourStartingAsync(session.Id, volunteerId, request.RequesterId);
 
         return true;
     }
@@ -314,7 +343,7 @@ public class TourRequestService : ITourRequestService
         
         await _context.SaveChangesAsync(cancellationToken);
 
-        await _notificationService.TourEndedAsync(session?.Id ?? id);
+        await _notificationService.TourEndedAsync(session?.Id ?? id, volunteerId, request.RequesterId);
 
         return true;
     }

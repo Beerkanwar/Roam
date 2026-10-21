@@ -44,9 +44,7 @@ public class PaymentService : IPaymentService
 
         var tip = new TipTransaction(senderId, receiverId, amount, currency.ToUpperInvariant(), tourSessionId, idempotencyKey);
         
-        // In real PSP flow: create payment intent, here we record completed transaction
-        tip.MarkCompleted();
-        
+        // Transaction remains in Pending status until external PSP webhook confirms settlement
         _context.TipTransactions.Add(tip);
         await _context.SaveChangesAsync();
         
@@ -72,8 +70,7 @@ public class PaymentService : IPaymentService
 
         var donation = new Donation(amount, currency.ToUpperInvariant(), donorId, idempotencyKey);
         
-        donation.MarkCompleted();
-        
+        // Transaction remains in Pending status until external PSP webhook confirms settlement
         _context.Donations.Add(donation);
         await _context.SaveChangesAsync();
         

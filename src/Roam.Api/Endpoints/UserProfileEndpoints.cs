@@ -14,7 +14,8 @@ public static class UserProfileEndpoints
     public static void MapUserProfileEndpoints(this IEndpointRouteBuilder builder)
     {
         var group = builder.MapGroup("/api/v1/profile")
-            .WithTags("UserProfile");
+            .WithTags("UserProfile")
+            .RequireRateLimiting("UserPolicy");
 
         // Public profile lookup (minimal safe fields)
         group.MapGet("/{id}", async (string id, ApplicationDbContext context, CancellationToken cancellationToken) =>
@@ -232,6 +233,29 @@ public static class UserProfileEndpoints
 
             await context.SaveChangesAsync(cancellationToken);
             return Results.NoContent();
+        })
+        .RequireAuthorization();
+
+        // Apply to become a volunteer
+        group.MapPost("/volunteer/apply", async (ClaimsPrincipal user, ApplicationDbContext context, CancellationToken cancellationToken) =>
+        {
+            var userId = user.FindFirstValue(ClaimTypes.NameIdentifier);
+            if (string.IsNullOrEmpty(userId)) return Results.Unauthorized();
+
+            var appUser = await context.Users.FindAsync(new object[] { userId }, cancellationToken);
+            if (appUser == null) return Results.NotFound();
+
+            if (appUser.AgeCategory != AgeCategory.Adult)
+                return Results.Problem("Only adult users (18+) can apply to be volunteers.", statusCode: StatusCodes.Status403Forbidden);
+
+            if (appUser.VolunteerStatus == VolunteerStatus.Approved)
+                return Results.Ok(new { message = "Already approved as a volunteer." });
+
+            appUser.VolunteerStatus = VolunteerStatus.Pending;
+            appUser.UpdatedAt = DateTime.UtcNow;
+            await context.SaveChangesAsync(cancellationToken);
+
+            return Results.Ok(new { message = "Volunteer application submitted. Awaiting administrative review." });
         })
         .RequireAuthorization();
     }

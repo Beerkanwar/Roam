@@ -27,7 +27,10 @@ public class AccountStatusMiddleware
                     .Select(u => (AccountStatus?)u.AccountStatus)
                     .FirstOrDefaultAsync();
 
-                if (accountStatus == AccountStatus.Suspended || accountStatus == AccountStatus.Banned)
+                if (accountStatus == AccountStatus.Suspended || 
+                    accountStatus == AccountStatus.Banned ||
+                    accountStatus == AccountStatus.PendingDeletion ||
+                    accountStatus == AccountStatus.Deleted)
                 {
                     context.Response.StatusCode = StatusCodes.Status403Forbidden;
                     context.Response.ContentType = "application/problem+json";
@@ -36,7 +39,7 @@ public class AccountStatusMiddleware
                         type = "https://tools.ietf.org/html/rfc7231#section-6.5.3",
                         title = "Forbidden",
                         status = StatusCodes.Status403Forbidden,
-                        detail = "Your account is currently suspended or banned."
+                        detail = "Your account is not active or has been marked for deletion."
                     });
                     return;
                 }

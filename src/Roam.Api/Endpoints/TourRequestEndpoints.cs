@@ -14,7 +14,8 @@ public static class TourRequestEndpoints
     {
         var group = builder.MapGroup("/api/v1/tour-requests")
             .WithTags("TourRequests")
-            .RequireAuthorization();
+            .RequireAuthorization()
+            .RequireRateLimiting("UserPolicy");
 
         group.MapPost("/", async (ClaimsPrincipal user, [FromBody] CreateTourRequestDto dto, ITourRequestService service, CancellationToken cancellationToken) =>
         {
@@ -22,8 +23,15 @@ public static class TourRequestEndpoints
             if (string.IsNullOrEmpty(userId)) return Results.Unauthorized();
 
             dto.RequesterId = userId;
-            var request = await service.CreateRequestAsync(dto, cancellationToken);
-            return Results.Created($"/api/v1/tour-requests/{request.Id}", request);
+            try
+            {
+                var request = await service.CreateRequestAsync(dto, cancellationToken);
+                return Results.Created($"/api/v1/tour-requests/{request.Id}", ToDto(request));
+            }
+            catch (ArgumentException ex)
+            {
+                return Results.BadRequest(new { error = ex.Message });
+            }
         });
 
         group.MapPost("/coordinates", async (ClaimsPrincipal user, [FromBody] CreateTourRequestByCoordinatesDto dto, ITourRequestService service, CancellationToken cancellationToken) =>
@@ -32,8 +40,15 @@ public static class TourRequestEndpoints
             if (string.IsNullOrEmpty(userId)) return Results.Unauthorized();
 
             dto.RequesterId = userId;
-            var request = await service.CreateRequestByCoordinatesAsync(dto, cancellationToken);
-            return Results.Created($"/api/v1/tour-requests/{request.Id}", request);
+            try
+            {
+                var request = await service.CreateRequestByCoordinatesAsync(dto, cancellationToken);
+                return Results.Created($"/api/v1/tour-requests/{request.Id}", ToDto(request));
+            }
+            catch (ArgumentException ex)
+            {
+                return Results.BadRequest(new { error = ex.Message });
+            }
         });
 
         group.MapPost("/{id}/accept", async (string id, ClaimsPrincipal user, ITourRequestService service, CancellationToken cancellationToken) =>
@@ -190,6 +205,21 @@ public static class TourRequestEndpoints
             catch (InvalidOperationException ex) { return Results.BadRequest(new { error = ex.Message }); }
         });
     }
+
+    private static TourRequestResponseDto ToDto(Roam.Domain.TourRequests.TourRequest r) => new()
+    {
+        Id = r.Id,
+        RequesterId = r.RequesterId,
+        PlaceId = r.PlaceId,
+        Status = (int)r.Status,
+        StatusName = r.Status.ToString(),
+        Visibility = (int)r.Visibility,
+        Mode = (int)r.Mode,
+        Description = r.Description,
+        CreatedAt = r.CreatedAt,
+        ExpiresAt = r.ExpiresAt,
+        AssignedVolunteerId = r.AssignedVolunteerId
+    };
 }
 
 public class CancelRequestDto
