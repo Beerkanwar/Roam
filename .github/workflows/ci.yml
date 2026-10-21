@@ -28,7 +28,9 @@ jobs:
         dotnet restore tests/Roam.Api.Tests/Roam.Api.Tests.csproj
 
     - name: Scan vulnerable packages
-      run: dotnet list package --vulnerable --include-transitive
+      run: |
+        dotnet list src/Roam.Api/Roam.Api.csproj package --vulnerable --include-transitive
+        dotnet list tests/Roam.Api.Tests/Roam.Api.Tests.csproj package --vulnerable --include-transitive
 
     - name: Build backend
       run: |
