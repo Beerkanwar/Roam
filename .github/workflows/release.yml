@@ -1,0 +1,209 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*.*.*"
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Release semantic version (e.g. 1.0.0)"
+        required: true
+        default: "1.0.0"
+      is_prerelease:
+        description: "Mark as pre-release"
+        type: boolean
+        required: false
+        default: false
+
+permissions:
+  contents: write
+
+jobs:
+  init:
+    name: Initialize Release Metadata
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.version_step.outputs.version }}
+      tag: ${{ steps.version_step.outputs.tag }}
+      prerelease: ${{ steps.version_step.outputs.prerelease }}
+    steps:
+      - name: Compute version and tag
+        id: version_step
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            RAW_VER="${{ github.event.inputs.version }}"
+            CLEAN_VER="${RAW_VER#v}"
+            TAG="v${CLEAN_VER}"
+            IS_PRE="${{ github.event.inputs.is_prerelease }}"
+          else
+            TAG="${GITHUB_REF#refs/tags/}"
+            CLEAN_VER="${TAG#v}"
+            if [[ "$TAG" == *"-alpha"* || "$TAG" == *"-beta"* || "$TAG" == *"-rc"* ]]; then
+              IS_PRE="true"
+            else
+              IS_PRE="false"
+            fi
+          fi
+          echo "version=${CLEAN_VER}" >> $GITHUB_OUTPUT
+          echo "tag=${TAG}" >> $GITHUB_OUTPUT
+          echo "prerelease=${IS_PRE}" >> $GITHUB_OUTPUT
+
+  build-android:
+    name: Build Android APK
+    runs-on: ubuntu-latest
+    needs: [init]
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Java 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'microsoft'
+          java-version: '17'
+
+      - name: Setup .NET 10
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 10.0.x
+
+      - name: Install MAUI Android Workload
+        run: dotnet workload install maui-android
+
+      - name: Build and Package Android APK
+        env:
+          VERSION: ${{ needs.init.outputs.version }}
+        run: |
+          mkdir -p artifacts
+          dotnet publish src/Roam.App/Roam.App.csproj -c Release -f net10.0-android \
+            -p:AndroidPackageFormat=apk \
+            -p:ApplicationDisplayVersion="$VERSION" \
+            -p:ApplicationVersion=1 \
+            -o ./publish/android
+          find ./publish/android -name "*.apk" -exec cp {} ./artifacts/Roam-Android-${VERSION}.apk \;
+          if [ ! -f ./artifacts/Roam-Android-${VERSION}.apk ]; then
+            echo "Searching root bin/release directory for APK..."
+            find src/Roam.App -name "*-Signed.apk" -o -name "*.apk" | head -n 1 | xargs -I {} cp {} ./artifacts/Roam-Android-${VERSION}.apk
+          fi
+
+      - name: Upload Android APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: Roam-Android-${{ needs.init.outputs.version }}
+          path: ./artifacts/*.apk
+
+  build-windows:
+    name: Build Windows App
+    runs-on: windows-latest
+    needs: [init]
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup .NET 10
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 10.0.x
+
+      - name: Install MAUI Windows Workload
+        run: dotnet workload install maui-windows
+
+      - name: Build and Package Windows Executable
+        shell: pwsh
+        run: |
+          $ver = "${{ needs.init.outputs.version }}"
+          dotnet publish src/Roam.App/Roam.App.csproj -c Release -f net10.0-windows10.0.19041.0 -p:WindowsPackageType=None -p:ApplicationDisplayVersion=$ver -o ./publish/windows
+          New-Item -ItemType Directory -Force -Path ./artifacts
+          Compress-Archive -Path ./publish/windows/* -DestinationPath ./artifacts/Roam-Windows-$ver.zip
+
+      - name: Upload Windows Archive
+        uses: actions/upload-artifact@v4
+        with:
+          name: Roam-Windows-${{ needs.init.outputs.version }}
+          path: ./artifacts/*.zip
+
+  build-web:
+    name: Build Web Distribution
+    runs-on: ubuntu-latest
+    needs: [init]
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Install dependencies and build
+        working-directory: src/Roam.Web
+        run: |
+          npm ci
+          npm run build
+
+      - name: Package Web Distribution
+        env:
+          VERSION: ${{ needs.init.outputs.version }}
+        run: |
+          mkdir -p artifacts
+          cd src/Roam.Web/dist
+          zip -r ../../../artifacts/Roam-Web-${VERSION}.zip .
+
+      - name: Upload Web Archive
+        uses: actions/upload-artifact@v4
+        with:
+          name: Roam-Web-${{ needs.init.outputs.version }}
+          path: ./artifacts/*.zip
+
+  build-api:
+    name: Build Linux API Binaries
+    runs-on: ubuntu-latest
+    needs: [init]
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup .NET 10
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 10.0.x
+
+      - name: Publish API
+        env:
+          VERSION: ${{ needs.init.outputs.version }}
+        run: |
+          mkdir -p artifacts
+          dotnet publish src/Roam.Api/Roam.Api.csproj -c Release -o ./publish/api
+          tar -czvf ./artifacts/Roam-Api-Linux-${VERSION}.tar.gz -C ./publish/api .
+
+      - name: Upload API Archive
+        uses: actions/upload-artifact@v4
+        with:
+          name: Roam-Api-Linux-${{ needs.init.outputs.version }}
+          path: ./artifacts/*.tar.gz
+
+  publish-release:
+    name: Publish GitHub Release
+    runs-on: ubuntu-latest
+    needs: [init, build-android, build-windows, build-web, build-api]
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Download all release artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: ./release-assets
+
+      - name: Collect release files
+        run: |
+          mkdir -p ./release-dist
+          find ./release-assets -type f \( -name "*.apk" -o -name "*.zip" -o -name "*.tar.gz" \) -exec cp {} ./release-dist/ \;
+          ls -la ./release-dist
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ needs.init.outputs.tag }}
+          name: Roam v${{ needs.init.outputs.version }}
+          draft: false
+          prerelease: ${{ needs.init.outputs.prerelease == 'true' }}
+          generate_release_notes: true
+          files: |
+            ./release-dist/*

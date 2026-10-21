@@ -7,21 +7,78 @@ on:
     branches: [ "main" ]
 
 jobs:
-  build:
-
+  backend:
+    name: Backend Build & Test
     runs-on: ubuntu-latest
 
     steps:
     - uses: actions/checkout@v4
-    - name: Setup .NET
+
+    - name: Setup .NET 10
       uses: actions/setup-dotnet@v4
       with:
         dotnet-version: 10.0.x
-    - name: Install Workloads
-      run: dotnet workload restore
+
     - name: Restore dependencies
-      run: dotnet restore
-    - name: Build
-      run: dotnet build --no-restore
-    - name: Test
-      run: dotnet test --no-build --verbosity normal
+      run: |
+        dotnet restore src/Roam.Api/Roam.Api.csproj
+        dotnet restore tests/Roam.Domain.Tests/Roam.Domain.Tests.csproj
+        dotnet restore tests/Roam.Application.Tests/Roam.Application.Tests.csproj
+        dotnet restore tests/Roam.Infrastructure.Tests/Roam.Infrastructure.Tests.csproj
+        dotnet restore tests/Roam.Api.Tests/Roam.Api.Tests.csproj
+
+    - name: Scan vulnerable packages
+      run: dotnet list package --vulnerable --include-transitive
+
+    - name: Build backend
+      run: |
+        dotnet build src/Roam.Api/Roam.Api.csproj -c Release --no-restore
+        dotnet build tests/Roam.Domain.Tests/Roam.Domain.Tests.csproj -c Release --no-restore
+        dotnet build tests/Roam.Application.Tests/Roam.Application.Tests.csproj -c Release --no-restore
+        dotnet build tests/Roam.Infrastructure.Tests/Roam.Infrastructure.Tests.csproj -c Release --no-restore
+        dotnet build tests/Roam.Api.Tests/Roam.Api.Tests.csproj -c Release --no-restore
+
+    - name: Run unit tests
+      run: |
+        dotnet test tests/Roam.Domain.Tests/Roam.Domain.Tests.csproj -c Release --no-build --verbosity normal
+        dotnet test tests/Roam.Application.Tests/Roam.Application.Tests.csproj -c Release --no-build --verbosity normal
+        dotnet test tests/Roam.Infrastructure.Tests/Roam.Infrastructure.Tests.csproj -c Release --no-build --verbosity normal
+        dotnet test tests/Roam.Api.Tests/Roam.Api.Tests.csproj -c Release --no-build --verbosity normal
+
+  frontend:
+    name: Frontend Lint & Build
+    runs-on: ubuntu-latest
+
+    defaults:
+      run:
+        working-directory: src/Roam.Web
+
+    steps:
+    - uses: actions/checkout@v4
+
+    - name: Setup Node.js
+      uses: actions/setup-node@v4
+      with:
+        node-version: 22
+        cache: 'npm'
+        cache-dependency-path: src/Roam.Web/package-lock.json
+
+    - name: Install dependencies
+      run: npm ci
+
+    - name: Run linter
+      run: npm run lint
+
+    - name: Build web application
+      run: npm run build
+
+  docker:
+    name: Docker Container Build
+    runs-on: ubuntu-latest
+    needs: [backend]
+
+    steps:
+    - uses: actions/checkout@v4
+
+    - name: Build API Docker Image
+      run: docker build -f infrastructure/docker/Dockerfile -t roam-api:ci .
