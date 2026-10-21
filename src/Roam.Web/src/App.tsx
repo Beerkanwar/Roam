@@ -1,6 +1,7 @@
 import React, { useState, useCallback, useEffect } from 'react';
 import Map from './components/Map';
 import LiveSession from './components/LiveSession';
+import * as signalR from '@microsoft/signalr';
 import './App.css';
 
 interface Place {
@@ -34,6 +35,39 @@ function App() {
     } else {
       localStorage.removeItem('roam_token');
     }
+  }, [token]);
+
+  useEffect(() => {
+    if (!token) return;
+
+    const connection = new signalR.HubConnectionBuilder()
+      .withUrl(`${API_BASE}/hubs/notifications`, {
+        accessTokenFactory: () => token
+      })
+      .withAutomaticReconnect()
+      .build();
+
+    connection.on('TourStarting', (sessionId: string) => {
+      setActiveSessionId(sessionId);
+    });
+
+    connection.on('TourEnded', () => {
+      setActiveSessionId(null);
+    });
+
+    connection.on('TourRequestAccepted', (requestId: string, volunteerId: string) => {
+      alert(`Tour request (${requestId}) accepted by volunteer ${volunteerId}!`);
+    });
+
+    connection.start()
+      .then(() => {
+        connection.invoke('JoinVolunteerGroup').catch(() => {});
+      })
+      .catch((err) => console.error("Notification hub connection error:", err));
+
+    return () => {
+      connection.stop();
+    };
   }, [token]);
 
   const handleAuthSubmit = async (e: React.FormEvent) => {

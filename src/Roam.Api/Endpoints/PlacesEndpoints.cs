@@ -12,7 +12,8 @@ public static class PlacesEndpoints
         var group = builder.MapGroup("/api/v1/places")
             .WithTags("Places")
             .WithApiVersionSet(builder.NewApiVersionSet().Build())
-            .RequireAuthorization();
+            .RequireAuthorization()
+            .RequireRateLimiting("UserPolicy");
 
         group.MapGet("/search", async ([FromQuery] string q, IPlaceService placeService, CancellationToken cancellationToken) =>
         {

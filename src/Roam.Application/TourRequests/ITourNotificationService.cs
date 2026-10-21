@@ -6,6 +6,6 @@ public interface ITourNotificationService
 {
     Task TourRequestCreatedAsync(string requestId);
     Task TourRequestAcceptedAsync(string requestId, string volunteerId, string requesterId);
-    Task TourStartingAsync(string requestId);
-    Task TourEndedAsync(string requestId);
+    Task TourStartingAsync(string sessionId, string volunteerId, string requesterId);
+    Task TourEndedAsync(string sessionId, string volunteerId, string requesterId);
 }

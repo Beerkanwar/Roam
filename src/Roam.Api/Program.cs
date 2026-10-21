@@ -1,6 +1,7 @@
 using System.Security.Claims;
 using System.Threading.RateLimiting;
 using Asp.Versioning;
+using Microsoft.AspNetCore.DataProtection;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.RateLimiting;
 using Microsoft.EntityFrameworkCore;
@@ -50,7 +51,16 @@ builder.Services.AddIdentityApiEndpoints<ApplicationUser>(options =>
     options.User.RequireUniqueEmail = true;
 })
 .AddRoles<IdentityRole>()
-.AddEntityFrameworkStores<ApplicationDbContext>();
+.AddEntityFrameworkStores<ApplicationDbContext>()
+.AddClaimsPrincipalFactory<Roam.Infrastructure.Identity.ApplicationUserClaimsPrincipalFactory>();
+
+// Data Protection Keys Persistence
+var keysFolder = Environment.GetEnvironmentVariable("DATA_PROTECTION_KEYS_PATH") 
+    ?? (builder.Environment.IsProduction() ? "/app/keys" : Path.Combine(AppContext.BaseDirectory, "temp_keys"));
+Directory.CreateDirectory(keysFolder);
+builder.Services.AddDataProtection()
+    .PersistKeysToFileSystem(new DirectoryInfo(keysFolder))
+    .SetApplicationName("Roam");
 
 // Add Auth & Policies
 builder.Services.AddAuthentication();
@@ -157,10 +167,10 @@ app.UseExceptionHandler();
 app.UseStatusCodePages();
 
 app.UseCors();
-app.UseRateLimiter();
 
 app.UseAuthentication();
 app.UseMiddleware<AccountStatusMiddleware>();
+app.UseRateLimiter();
 app.UseAuthorization();
 
 app.UseSerilogRequestLogging();
@@ -189,10 +199,11 @@ app.MapPlacesEndpoints();
 app.MapTourRequestEndpoints();
 app.MapTrustAndSafetyEndpoints();
 app.MapUserProfileEndpoints();
+app.MapAdminEndpoints();
 app.MapSessionEndpoints();
 app.MapChatEndpoints();
 app.MapPaymentsEndpoints();
-app.MapIdentityApi<ApplicationUser>();
+app.MapIdentityApi<ApplicationUser>().RequireRateLimiting("AuthPolicy");
 
 app.MapGet("/", () => "Roam API is running").WithApiVersionSet(apiVersionSet);
 
@@ -201,12 +212,13 @@ app.MapHub<NotificationHub>("/hubs/notifications");
 app.MapHub<ChatHub>("/hubs/chat");
 app.MapHub<PresenceHub>("/hubs/presence");
 
-// Apply migrations safely on startup unless disabled
+// Apply migrations and seed safely on startup unless disabled
 if (Environment.GetEnvironmentVariable("SKIP_MIGRATIONS") != "true")
 {
     using var scope = app.Services.CreateScope();
     var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
     await dbContext.Database.MigrateAsync();
+    await Roam.Infrastructure.Identity.DatabaseSeeder.SeedAsync(app.Services, app.Configuration);
 }
 
 app.Run();

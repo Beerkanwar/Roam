@@ -20,7 +20,7 @@ public class SignalRTourNotificationService : ITourNotificationService
 
     public async Task TourRequestCreatedAsync(string requestId)
     {
-        // Target active volunteer discovery group instead of broadcasting to all clients
+        // Target active volunteer discovery group
         await _notificationHub.Clients.Group("volunteers").TourRequestCreated(requestId);
     }
 
@@ -30,15 +30,20 @@ public class SignalRTourNotificationService : ITourNotificationService
         await _notificationHub.Clients.User(requesterId).TourRequestAccepted(requestId, volunteerId);
     }
 
-    public async Task TourStartingAsync(string requestId)
+    public async Task TourStartingAsync(string sessionId, string volunteerId, string requesterId)
     {
-        // Target only the specific tour session room group
-        await _tourHub.Clients.Group($"tour:{requestId}").TourStarting(requestId);
+        // Notify both parties directly via their user IDs with the sessionId
+        await _notificationHub.Clients.User(requesterId).TourStarting(sessionId);
+        await _notificationHub.Clients.User(volunteerId).TourStarting(sessionId);
+        
+        // Also notify in-room group if any clients joined early
+        await _tourHub.Clients.Group($"tour:{sessionId}").TourStarting(sessionId);
     }
 
-    public async Task TourEndedAsync(string requestId)
+    public async Task TourEndedAsync(string sessionId, string volunteerId, string requesterId)
     {
-        // Target only the specific tour session room group
-        await _tourHub.Clients.Group($"tour:{requestId}").TourEnded(requestId);
+        await _notificationHub.Clients.User(requesterId).TourEnded(sessionId);
+        await _notificationHub.Clients.User(volunteerId).TourEnded(sessionId);
+        await _tourHub.Clients.Group($"tour:{sessionId}").TourEnded(sessionId);
     }
 }

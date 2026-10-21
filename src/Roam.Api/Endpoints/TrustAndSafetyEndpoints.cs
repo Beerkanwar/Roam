@@ -12,7 +12,8 @@ public static class TrustAndSafetyEndpoints
         var group = builder.MapGroup("/api/v1/trust-safety")
             .WithTags("TrustAndSafety")
             .WithApiVersionSet(builder.NewApiVersionSet().Build())
-            .RequireAuthorization();
+            .RequireAuthorization()
+            .RequireRateLimiting("UserPolicy");
 
         group.MapPost("/reports", async (ClaimsPrincipal user, [FromBody] CreateReportDto dto, ITrustAndSafetyService service, CancellationToken cancellationToken) =>
         {
@@ -20,7 +21,8 @@ public static class TrustAndSafetyEndpoints
 
             var report = await service.SubmitReportAsync(dto, cancellationToken);
             return Results.Created($"/api/v1/trust-safety/reports/{report.Id}", report);
-        });
+        })
+        .RequireRateLimiting("ReportsPolicy");
 
         group.MapGet("/users/{userId}/reliability", async (string userId, ITrustAndSafetyService service, CancellationToken cancellationToken) =>
         {
