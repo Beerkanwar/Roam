@@ -20,12 +20,13 @@ public class TurnService : ITurnService
 
     public Task<IEnumerable<IceServerDto>> GetIceServersAsync(string userId, CancellationToken cancellationToken = default)
     {
-        // For standard coturn REST API, we generate a short-lived credential
-        var ttlSeconds = 86400; // 24 hours
+        // Generate short-lived credential with 10-minute TTL
+        var ttlSeconds = 600; // 10 minutes
         var unixTimestamp = DateTimeOffset.UtcNow.ToUnixTimeSeconds() + ttlSeconds;
         var username = $"{unixTimestamp}:{userId}";
 
-        var hmac = new HMACSHA1(Encoding.UTF8.GetBytes(_options.Password));
+        var secret = string.IsNullOrEmpty(_options.Password) ? "roam-default-turn-secret" : _options.Password;
+        var hmac = new HMACSHA1(Encoding.UTF8.GetBytes(secret));
         var hash = hmac.ComputeHash(Encoding.UTF8.GetBytes(username));
         var credential = Convert.ToBase64String(hash);
 

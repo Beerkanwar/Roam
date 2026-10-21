@@ -1,6 +1,14 @@
+using System;
+using System.Collections.Generic;
+using System.Linq;
+using System.Threading;
+using System.Threading.Tasks;
 using Microsoft.EntityFrameworkCore;
 using Roam.Application.TourRequests;
+using Roam.Domain.Places;
 using Roam.Domain.TourRequests;
+using Roam.Domain.TourSessions;
+using Roam.Domain.Users;
 using Roam.Infrastructure.Persistence;
 
 namespace Roam.Infrastructure.TourRequests;
@@ -20,6 +28,10 @@ public class TourRequestService : ITourRequestService
 
     public async Task<TourRequest> CreateRequestAsync(CreateTourRequestDto dto, CancellationToken cancellationToken = default)
     {
+        var expiresAt = dto.Mode == SchedulingMode.Instant 
+            ? DateTime.UtcNow.AddHours(24) 
+            : DateTime.UtcNow.AddDays(7);
+
         var request = new TourRequest
         {
             RequesterId = dto.RequesterId,
@@ -27,7 +39,8 @@ public class TourRequestService : ITourRequestService
             Visibility = dto.Visibility,
             Mode = dto.Mode,
             Description = dto.Description,
-            Status = TourRequestStatus.Published // Implicitly moves from Draft -> Published upon creation for MVP
+            Status = TourRequestStatus.Published,
+            ExpiresAt = expiresAt
         };
 
         _context.TourRequests.Add(request);
@@ -40,7 +53,7 @@ public class TourRequestService : ITourRequestService
 
     public async Task<TourRequest> CreateRequestByCoordinatesAsync(CreateTourRequestByCoordinatesDto dto, CancellationToken cancellationToken = default)
     {
-        var place = new Roam.Domain.Places.Place
+        var place = new Place
         {
             Name = "Custom Location",
             Description = "Requested at specific coordinates",
@@ -50,6 +63,10 @@ public class TourRequestService : ITourRequestService
         _context.Places.Add(place);
         await _context.SaveChangesAsync(cancellationToken);
 
+        var expiresAt = dto.Mode == SchedulingMode.Instant 
+            ? DateTime.UtcNow.AddHours(24) 
+            : DateTime.UtcNow.AddDays(7);
+
         var request = new TourRequest
         {
             RequesterId = dto.RequesterId,
@@ -57,7 +74,8 @@ public class TourRequestService : ITourRequestService
             Visibility = dto.Visibility,
             Mode = dto.Mode,
             Description = dto.Description,
-            Status = TourRequestStatus.Published
+            Status = TourRequestStatus.Published,
+            ExpiresAt = expiresAt
         };
 
         _context.TourRequests.Add(request);
@@ -68,14 +86,33 @@ public class TourRequestService : ITourRequestService
 
     public async Task<bool> AcceptRequestAsync(string id, string volunteerId, CancellationToken cancellationToken = default)
     {
-        var request = await _context.TourRequests.FindAsync(new object[] { id }, cancellationToken);
+        // 1. Volunteer verification
+        var volunteer = await _context.Users.FindAsync(new object[] { volunteerId }, cancellationToken);
+        if (volunteer == null || volunteer.VolunteerStatus != VolunteerStatus.Approved)
+            throw new UnauthorizedAccessException("Only approved volunteers can accept tour requests.");
+
+        var request = await _context.TourRequests.FirstOrDefaultAsync(r => r.Id == id, cancellationToken);
         if (request == null) return false;
+
+        // 2. Concurrency & state preconditions
+        if (request.Status != TourRequestStatus.Published && request.Status != TourRequestStatus.VolunteerInterested)
+            throw new InvalidOperationException($"Cannot accept tour request in status {request.Status}.");
+
+        if (!string.IsNullOrEmpty(request.AssignedVolunteerId) && request.AssignedVolunteerId != volunteerId)
+            throw new InvalidOperationException("Request has already been assigned to another volunteer.");
+
+        // 3. User block check
+        var isBlocked = await _context.UserBlocks.AnyAsync(b =>
+            (b.BlockerId == volunteerId && b.BlockedId == request.RequesterId) ||
+            (b.BlockerId == request.RequesterId && b.BlockedId == volunteerId), cancellationToken);
+
+        if (isBlocked)
+            throw new InvalidOperationException("Cannot accept a tour request from a blocked user.");
 
         request.TransitionTo(TourRequestStatus.Accepted);
         request.AssignedVolunteerId = volunteerId;
         await _context.SaveChangesAsync(cancellationToken);
 
-        // Notify the requester and global feed
         await _notificationService.TourRequestAcceptedAsync(id, volunteerId, request.RequesterId);
         
         return true;
@@ -83,6 +120,12 @@ public class TourRequestService : ITourRequestService
 
     public async Task<ScheduledTour> ProposeScheduleAsync(string requestId, string userId, DateTime startTime, DateTime? endTime = null, CancellationToken cancellationToken = default)
     {
+        if (startTime < DateTime.UtcNow.AddMinutes(5))
+            throw new ArgumentException("Proposed start time must be at least 5 minutes in the future.");
+
+        if (endTime.HasValue && endTime.Value <= startTime)
+            throw new ArgumentException("Proposed end time must be after the start time.");
+
         var request = await _context.TourRequests.FindAsync(new object[] { requestId }, cancellationToken);
         if (request == null) throw new InvalidOperationException("Request not found");
 
@@ -93,8 +136,8 @@ public class TourRequestService : ITourRequestService
         {
             TourRequestId = requestId,
             ProposedByUserId = userId,
-            ProposedStartUtc = startTime,
-            ProposedEndUtc = endTime
+            ProposedStartUtc = DateTime.SpecifyKind(startTime, DateTimeKind.Utc),
+            ProposedEndUtc = endTime.HasValue ? DateTime.SpecifyKind(endTime.Value, DateTimeKind.Utc) : null
         };
 
         if (request.RequesterId == userId)
@@ -105,8 +148,6 @@ public class TourRequestService : ITourRequestService
         _context.ScheduledTours.Add(schedule);
         await _context.SaveChangesAsync(cancellationToken);
 
-        // Notify the other party
-        // Optional: wait _notificationService.ScheduleProposedAsync(...)
         return schedule;
     }
 
@@ -188,18 +229,25 @@ public class TourRequestService : ITourRequestService
 
     public async Task<bool> MarkVolunteerInterestedAsync(string id, string volunteerId, CancellationToken cancellationToken = default)
     {
+        var volunteer = await _context.Users.FindAsync(new object[] { volunteerId }, cancellationToken);
+        if (volunteer == null || volunteer.VolunteerStatus != VolunteerStatus.Approved)
+            throw new UnauthorizedAccessException("Only approved volunteers can express interest in tours.");
+
         var request = await _context.TourRequests.FindAsync(new object[] { id }, cancellationToken);
         if (request == null) return false;
 
         request.TransitionTo(TourRequestStatus.VolunteerInterested);
-        
-        request.AssignedVolunteerId = volunteerId; // tentative
+        request.AssignedVolunteerId = volunteerId;
         await _context.SaveChangesAsync(cancellationToken);
         return true;
     }
 
     public async Task<bool> StartTourAsync(string id, string volunteerId, CancellationToken cancellationToken = default)
     {
+        var volunteer = await _context.Users.FindAsync(new object[] { volunteerId }, cancellationToken);
+        if (volunteer == null || volunteer.VolunteerStatus != VolunteerStatus.Approved)
+            throw new UnauthorizedAccessException("Only approved volunteers can start tours.");
+
         var request = await _context.TourRequests.FindAsync(new object[] { id }, cancellationToken);
         if (request == null) return false;
 
@@ -207,11 +255,37 @@ public class TourRequestService : ITourRequestService
             throw new UnauthorizedAccessException("Only the assigned volunteer can start this tour.");
 
         request.TransitionTo(TourRequestStatus.Active);
-        
+
+        // Atomically create TourSession and participants
+        var session = new TourSession
+        {
+            Id = Guid.NewGuid().ToString(),
+            TourRequestId = request.Id,
+            HostVolunteerId = volunteerId,
+            Status = SessionStatus.Active,
+            StartedAt = DateTime.UtcNow
+        };
+
+        session.Participants.Add(new TourParticipant
+        {
+            TourSessionId = session.Id,
+            UserId = volunteerId,
+            Role = ParticipantRole.Host,
+            JoinedAt = DateTime.UtcNow
+        });
+
+        session.Participants.Add(new TourParticipant
+        {
+            TourSessionId = session.Id,
+            UserId = request.RequesterId,
+            Role = ParticipantRole.Viewer,
+            JoinedAt = DateTime.UtcNow
+        });
+
+        _context.TourSessions.Add(session);
         await _context.SaveChangesAsync(cancellationToken);
 
-        // Notify global feed and session participants
-        await _notificationService.TourStartingAsync(id);
+        await _notificationService.TourStartingAsync(session.Id);
 
         return true;
     }
@@ -225,34 +299,90 @@ public class TourRequestService : ITourRequestService
             throw new UnauthorizedAccessException("Only the assigned volunteer can complete this tour.");
 
         request.TransitionTo(TourRequestStatus.Completed);
+
+        // Complete any open active session
+        var session = await _context.TourSessions
+            .Where(s => s.TourRequestId == id && (s.Status == SessionStatus.Active || s.Status == SessionStatus.Starting))
+            .FirstOrDefaultAsync(cancellationToken);
+
+        if (session != null)
+        {
+            session.Status = SessionStatus.Completed;
+            session.EndedAt = DateTime.UtcNow;
+            session.EndReason = "Completed by volunteer";
+        }
         
         await _context.SaveChangesAsync(cancellationToken);
 
-        await _notificationService.TourEndedAsync(id);
+        await _notificationService.TourEndedAsync(session?.Id ?? id);
 
         return true;
     }
 
     public async Task<IEnumerable<TourRequest>> GetNearbyRequestsAsync(string volunteerId, double radiusMeters, CancellationToken cancellationToken = default)
     {
-        // 1. Get the volunteer's current location
+        if (radiusMeters <= 0 || radiusMeters > 50000)
+            throw new ArgumentException("Radius must be between 1 and 50,000 meters.");
+
         var userLocation = await _context.UserLocations
             .AsNoTracking()
             .FirstOrDefaultAsync(l => l.UserId == volunteerId, cancellationToken);
 
         if (userLocation == null)
         {
-            return Array.Empty<TourRequest>(); // We cannot find nearby requests if we don't know where the volunteer is
+            return Array.Empty<TourRequest>();
         }
 
-        // 2. Find published requests that are associated with a Place within the radius
-        var nearbyRequests = await _context.TourRequests
-            .Include(r => r.Place) // Ensure Place data is loaded
+        // Exclude blocked user requests
+        var blockedUserIds = await _context.UserBlocks
+            .Where(b => b.BlockerId == volunteerId || b.BlockedId == volunteerId)
+            .Select(b => b.BlockerId == volunteerId ? b.BlockedId : b.BlockerId)
+            .ToListAsync(cancellationToken);
+
+        // 1 degree latitude ~= 111,320 meters
+        double latDegreeDelta = radiusMeters / 111320.0;
+        double cosineLat = Math.Cos(userLocation.Location.Y * Math.PI / 180.0);
+        double lngDegreeDelta = radiusMeters / (111320.0 * Math.Max(0.01, Math.Abs(cosineLat)));
+
+        double minLat = userLocation.Location.Y - latDegreeDelta;
+        double maxLat = userLocation.Location.Y + latDegreeDelta;
+        double minLng = userLocation.Location.X - lngDegreeDelta;
+        double maxLng = userLocation.Location.X + lngDegreeDelta;
+
+        // Query with bounding box and visibility filter
+        var candidates = await _context.TourRequests
+            .Include(r => r.Place)
             .Where(r => r.Status == TourRequestStatus.Published)
-            .Where(r => r.Place != null && r.Place.Location.IsWithinDistance(userLocation.Location, radiusMeters))
+            .Where(r => r.Visibility == VisibilityMode.Group || r.RequesterId == volunteerId)
+            .Where(r => !blockedUserIds.Contains(r.RequesterId))
+            .Where(r => r.Place != null &&
+                        r.Place.Location.Y >= minLat && r.Place.Location.Y <= maxLat &&
+                        r.Place.Location.X >= minLng && r.Place.Location.X <= maxLng)
             .AsNoTracking()
             .ToListAsync(cancellationToken);
 
+        // Accurate Haversine metric distance check
+        var nearbyRequests = candidates.Where(r =>
+        {
+            if (r.Place == null) return false;
+            double distance = CalculateDistanceMeters(
+                userLocation.Location.Y, userLocation.Location.X,
+                r.Place.Location.Y, r.Place.Location.X);
+            return distance <= radiusMeters;
+        }).ToList();
+
         return nearbyRequests;
+    }
+
+    private static double CalculateDistanceMeters(double lat1, double lon1, double lat2, double lon2)
+    {
+        const double r = 6371000; // Earth radius in meters
+        double dLat = (lat2 - lat1) * Math.PI / 180.0;
+        double dLon = (lon2 - lon1) * Math.PI / 180.0;
+        double a = Math.Sin(dLat / 2) * Math.Sin(dLat / 2) +
+                   Math.Cos(lat1 * Math.PI / 180.0) * Math.Cos(lat2 * Math.PI / 180.0) *
+                   Math.Sin(dLon / 2) * Math.Sin(dLon / 2);
+        double c = 2 * Math.Atan2(Math.Sqrt(a), Math.Sqrt(1 - a));
+        return r * c;
     }
 }

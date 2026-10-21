@@ -48,13 +48,21 @@ public class ChatHub : Hub<IChatClient>
 
     public async Task SendTypingStarted(string sessionId)
     {
-        var senderId = Context.User?.FindFirstValue(ClaimTypes.NameIdentifier) ?? "Unknown";
+        var senderId = Context.User?.FindFirstValue(ClaimTypes.NameIdentifier);
+        if (string.IsNullOrEmpty(senderId) || !await _chatService.IsUserParticipantAsync(sessionId, senderId))
+        {
+            throw new HubException("Unauthorized to send typing notifications in this session.");
+        }
         await Clients.OthersInGroup(sessionId).TypingStarted(senderId);
     }
 
     public async Task SendTypingStopped(string sessionId)
     {
-        var senderId = Context.User?.FindFirstValue(ClaimTypes.NameIdentifier) ?? "Unknown";
+        var senderId = Context.User?.FindFirstValue(ClaimTypes.NameIdentifier);
+        if (string.IsNullOrEmpty(senderId) || !await _chatService.IsUserParticipantAsync(sessionId, senderId))
+        {
+            throw new HubException("Unauthorized to send typing notifications in this session.");
+        }
         await Clients.OthersInGroup(sessionId).TypingStopped(senderId);
     }
 }

@@ -22,7 +22,6 @@ public class ChatService : IChatService
 
     public async Task<bool> IsUserParticipantAsync(string sessionId, string userId, CancellationToken cancellationToken = default)
     {
-        // First check if the user is the host
         var session = await _context.TourSessions
             .AsNoTracking()
             .FirstOrDefaultAsync(s => s.Id == sessionId, cancellationToken);
@@ -33,7 +32,6 @@ public class ChatService : IChatService
         if (session.HostVolunteerId == userId)
             return true;
             
-        // Then check if the user is a participant
         var isParticipant = await _context.TourParticipants
             .AnyAsync(p => p.TourSessionId == sessionId && p.UserId == userId, cancellationToken);
             
@@ -42,24 +40,53 @@ public class ChatService : IChatService
 
     public async Task<ChatMessageDto> SendMessageAsync(string sessionId, string senderId, string text, CancellationToken cancellationToken = default)
     {
+        if (string.IsNullOrWhiteSpace(text))
+            throw new ArgumentException("Message text cannot be empty.", nameof(text));
+
+        var trimmedText = text.Trim();
+        if (trimmedText.Length > 2000)
+            throw new ArgumentException("Message text cannot exceed 2000 characters.", nameof(text));
+
         var isParticipant = await IsUserParticipantAsync(sessionId, senderId, cancellationToken);
         if (!isParticipant)
         {
             throw new UnauthorizedAccessException("User is not a participant in this session.");
         }
 
+        // Check if sender is blocked by or has blocked the session host or participants
+        var session = await _context.TourSessions
+            .Include(s => s.Participants)
+            .AsNoTracking()
+            .FirstOrDefaultAsync(s => s.Id == sessionId, cancellationToken);
+
+        if (session != null)
+        {
+            var counterpartId = session.HostVolunteerId == senderId
+                ? session.Participants.FirstOrDefault(p => p.UserId != senderId)?.UserId
+                : session.HostVolunteerId;
+
+            if (!string.IsNullOrEmpty(counterpartId))
+            {
+                var isBlocked = await _context.UserBlocks.AnyAsync(b =>
+                    (b.BlockerId == senderId && b.BlockedId == counterpartId) ||
+                    (b.BlockerId == counterpartId && b.BlockedId == senderId), cancellationToken);
+
+                if (isBlocked)
+                    throw new InvalidOperationException("Cannot send messages to a blocked user.");
+            }
+        }
+
         var message = new ChatMessage
         {
             SessionId = sessionId,
             SenderId = senderId,
-            Text = text,
+            Text = trimmedText,
             SentAt = DateTime.UtcNow
         };
 
         _context.ChatMessages.Add(message);
         await _context.SaveChangesAsync(cancellationToken);
 
-        // Fetch sender name
         var senderName = await _context.Users
             .Where(u => u.Id == senderId)
             .Select(u => u.DisplayName)
@@ -76,7 +103,12 @@ public class ChatService : IChatService
         };
     }
 
-    public async Task<IEnumerable<ChatMessageDto>> GetSessionChatHistoryAsync(string sessionId, string userId, CancellationToken cancellationToken = default)
+    public async Task<IEnumerable<ChatMessageDto>> GetSessionChatHistoryAsync(
+        string sessionId, 
+        string userId, 
+        DateTime? before = null, 
+        int limit = 50, 
+        CancellationToken cancellationToken = default)
     {
         var isParticipant = await IsUserParticipantAsync(sessionId, userId, cancellationToken);
         if (!isParticipant)
@@ -84,9 +116,19 @@ public class ChatService : IChatService
             throw new UnauthorizedAccessException("User is not a participant in this session.");
         }
 
-        var messages = await _context.ChatMessages
-            .Where(m => m.SessionId == sessionId)
-            .OrderBy(m => m.SentAt)
+        var pageLimit = Math.Clamp(limit, 1, 100);
+
+        var query = _context.ChatMessages
+            .Where(m => m.SessionId == sessionId);
+
+        if (before.HasValue)
+        {
+            query = query.Where(m => m.SentAt < before.Value);
+        }
+
+        var messages = await query
+            .OrderByDescending(m => m.SentAt)
+            .Take(pageLimit)
             .Join(_context.Users, 
                 m => m.SenderId, 
                 u => u.Id, 
@@ -101,6 +143,8 @@ public class ChatService : IChatService
                 })
             .ToListAsync(cancellationToken);
 
+        // Return in chronological order
+        messages.Reverse();
         return messages;
     }
 }

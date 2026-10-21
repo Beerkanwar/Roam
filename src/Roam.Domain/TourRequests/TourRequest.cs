@@ -38,7 +38,8 @@ public class TourRequest
             TourRequestStatus.VolunteerInterested => Status == TourRequestStatus.Published || Status == TourRequestStatus.Matching,
             TourRequestStatus.Accepted => Status == TourRequestStatus.VolunteerInterested || Status == TourRequestStatus.Published || Status == TourRequestStatus.Matching,
             TourRequestStatus.Confirmed => Status == TourRequestStatus.Accepted,
-            TourRequestStatus.Active => Status == TourRequestStatus.Confirmed || Status == TourRequestStatus.Accepted,
+            TourRequestStatus.Active => (Mode == SchedulingMode.Scheduled && Status == TourRequestStatus.Confirmed) ||
+                                       (Mode == SchedulingMode.Instant && (Status == TourRequestStatus.Accepted || Status == TourRequestStatus.Confirmed)),
             TourRequestStatus.Completed => Status == TourRequestStatus.Active,
             TourRequestStatus.Cancelled => Status != TourRequestStatus.Completed && Status != TourRequestStatus.Active && Status != TourRequestStatus.Cancelled,
             TourRequestStatus.Expired => Status == TourRequestStatus.Published || Status == TourRequestStatus.Matching,

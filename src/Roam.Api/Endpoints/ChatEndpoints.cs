@@ -18,7 +18,13 @@ public static class ChatEndpoints
             .WithApiVersionSet(app.NewApiVersionSet().Build())
             .HasApiVersion(1, 0);
 
-        group.MapGet("/{sessionId}/chat", async (string sessionId, ClaimsPrincipal user, IChatService chatService, CancellationToken cancellationToken) =>
+        group.MapGet("/{sessionId}/chat", async (
+            string sessionId, 
+            [Microsoft.AspNetCore.Mvc.FromQuery] DateTime? before,
+            [Microsoft.AspNetCore.Mvc.FromQuery] int limit = 50,
+            ClaimsPrincipal user = null!, 
+            IChatService chatService = null!, 
+            CancellationToken cancellationToken = default) =>
         {
             var userId = user.FindFirstValue(ClaimTypes.NameIdentifier);
             if (string.IsNullOrEmpty(userId))
@@ -28,7 +34,7 @@ public static class ChatEndpoints
 
             try
             {
-                var history = await chatService.GetSessionChatHistoryAsync(sessionId, userId, cancellationToken);
+                var history = await chatService.GetSessionChatHistoryAsync(sessionId, userId, before, limit, cancellationToken);
                 return Results.Ok(history);
             }
             catch (System.UnauthorizedAccessException)

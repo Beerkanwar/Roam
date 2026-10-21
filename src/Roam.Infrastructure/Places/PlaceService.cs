@@ -18,34 +18,52 @@ public class PlaceService : IPlaceService
 
     public async Task<IEnumerable<Place>> SearchPlacesAsync(string query, CancellationToken cancellationToken = default)
     {
-        // For MVP: Search the local DB first. If not found, use geocoding service.
+        if (string.IsNullOrWhiteSpace(query))
+            return Array.Empty<Place>();
+
+        var normalizedQuery = query.Trim().ToLowerInvariant();
+
+        // 1. Search local DB first
         var localPlaces = await _context.Places
-            .Where(p => p.Name.ToLower().Contains(query.ToLower()))
+            .Where(p => p.Name.ToLower().Contains(normalizedQuery))
             .OrderBy(p => p.Name)
             .Take(10)
             .ToListAsync(cancellationToken);
 
-        if (localPlaces.Any())
+        if (localPlaces.Count > 0)
         {
             return localPlaces;
         }
 
+        // 2. Fetch external geocoding results
         var geoResults = await _geocodingService.GeocodeAsync(query, cancellationToken);
-        
-        var newPlaces = geoResults.Select(g => new Place
-        {
-            Name = g.Name,
-            Description = g.Description,
-            Location = new NetTopologySuite.Geometries.Point(g.Longitude, g.Latitude) { SRID = 4326 }
-        }).ToList();
+        var newPlaces = new List<Place>();
 
-        if (newPlaces.Any())
+        foreach (var g in geoResults)
+        {
+            // Deduplicate: check if place already exists with matching name
+            var exists = await _context.Places.AnyAsync(
+                p => p.Name.ToLower() == g.Name.ToLower(), 
+                cancellationToken);
+
+            if (!exists)
+            {
+                newPlaces.Add(new Place
+                {
+                    Name = g.Name,
+                    Description = g.Description,
+                    Location = new NetTopologySuite.Geometries.Point(g.Longitude, g.Latitude) { SRID = 4326 }
+                });
+            }
+        }
+
+        if (newPlaces.Count > 0)
         {
             _context.Places.AddRange(newPlaces);
             await _context.SaveChangesAsync(cancellationToken);
         }
 
-        return newPlaces;
+        return newPlaces.Count > 0 ? newPlaces : localPlaces;
     }
 
     public async Task<Place?> GetPlaceByIdAsync(string id, CancellationToken cancellationToken = default)

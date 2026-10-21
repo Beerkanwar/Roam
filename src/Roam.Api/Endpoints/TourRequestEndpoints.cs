@@ -1,6 +1,10 @@
 using System.Security.Claims;
+using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.EntityFrameworkCore;
 using Roam.Application.TourRequests;
+using Roam.Domain.TourSessions;
+using Roam.Infrastructure.Persistence;
 
 namespace Roam.Api.Endpoints;
 
@@ -10,140 +14,180 @@ public static class TourRequestEndpoints
     {
         var group = builder.MapGroup("/api/v1/tour-requests")
             .WithTags("TourRequests")
-            .WithApiVersionSet(builder.NewApiVersionSet().Build())
             .RequireAuthorization();
 
         group.MapPost("/", async (ClaimsPrincipal user, [FromBody] CreateTourRequestDto dto, ITourRequestService service, CancellationToken cancellationToken) =>
         {
-            dto.RequesterId = user.FindFirstValue(ClaimTypes.NameIdentifier) ?? throw new InvalidOperationException("User ID missing from token.");
+            var userId = user.FindFirstValue(ClaimTypes.NameIdentifier);
+            if (string.IsNullOrEmpty(userId)) return Results.Unauthorized();
 
+            dto.RequesterId = userId;
             var request = await service.CreateRequestAsync(dto, cancellationToken);
             return Results.Created($"/api/v1/tour-requests/{request.Id}", request);
         });
 
         group.MapPost("/coordinates", async (ClaimsPrincipal user, [FromBody] CreateTourRequestByCoordinatesDto dto, ITourRequestService service, CancellationToken cancellationToken) =>
         {
-            dto.RequesterId = user.FindFirstValue(ClaimTypes.NameIdentifier) ?? throw new InvalidOperationException("User ID missing from token.");
+            var userId = user.FindFirstValue(ClaimTypes.NameIdentifier);
+            if (string.IsNullOrEmpty(userId)) return Results.Unauthorized();
 
+            dto.RequesterId = userId;
             var request = await service.CreateRequestByCoordinatesAsync(dto, cancellationToken);
             return Results.Created($"/api/v1/tour-requests/{request.Id}", request);
         });
 
         group.MapPost("/{id}/accept", async (string id, ClaimsPrincipal user, ITourRequestService service, CancellationToken cancellationToken) =>
         {
-            var volunteerId = user.FindFirstValue(ClaimTypes.NameIdentifier) ?? throw new InvalidOperationException("User ID missing from token.");
-            var success = await service.AcceptRequestAsync(id, volunteerId, cancellationToken);
-            return success ? Results.Ok() : Results.BadRequest("Cannot accept request from current state.");
+            var volunteerId = user.FindFirstValue(ClaimTypes.NameIdentifier);
+            if (string.IsNullOrEmpty(volunteerId)) return Results.Unauthorized();
+
+            try
+            {
+                var success = await service.AcceptRequestAsync(id, volunteerId, cancellationToken);
+                return success ? Results.Ok() : Results.NotFound();
+            }
+            catch (UnauthorizedAccessException ex) { return Results.Problem(ex.Message, statusCode: StatusCodes.Status403Forbidden); }
+            catch (InvalidOperationException ex) { return Results.Conflict(new { error = ex.Message }); }
         });
 
         group.MapPost("/{id}/schedule/propose", async (string id, [FromBody] ProposeScheduleDto dto, ClaimsPrincipal user, ITourRequestService service, CancellationToken cancellationToken) =>
         {
-            var userId = user.FindFirstValue(ClaimTypes.NameIdentifier) ?? throw new InvalidOperationException("User ID missing from token.");
+            var userId = user.FindFirstValue(ClaimTypes.NameIdentifier);
+            if (string.IsNullOrEmpty(userId)) return Results.Unauthorized();
+
             try
             {
                 var schedule = await service.ProposeScheduleAsync(id, userId, dto.ProposedStartUtc, dto.ProposedEndUtc, cancellationToken);
                 return Results.Ok(schedule);
             }
-            catch (UnauthorizedAccessException) { return Results.Forbid(); }
-            catch (InvalidOperationException ex) { return Results.BadRequest(ex.Message); }
+            catch (UnauthorizedAccessException ex) { return Results.Problem(ex.Message, statusCode: StatusCodes.Status403Forbidden); }
+            catch (ArgumentException ex) { return Results.BadRequest(new { error = ex.Message }); }
+            catch (InvalidOperationException ex) { return Results.BadRequest(new { error = ex.Message }); }
         });
 
         group.MapPost("/schedule/{scheduleId}/accept", async (string scheduleId, ClaimsPrincipal user, ITourRequestService service, CancellationToken cancellationToken) =>
         {
-            var userId = user.FindFirstValue(ClaimTypes.NameIdentifier) ?? throw new InvalidOperationException("User ID missing from token.");
+            var userId = user.FindFirstValue(ClaimTypes.NameIdentifier);
+            if (string.IsNullOrEmpty(userId)) return Results.Unauthorized();
+
             try
             {
                 var success = await service.AcceptScheduleAsync(scheduleId, userId, cancellationToken);
                 return success ? Results.Ok() : Results.BadRequest("Cannot accept schedule.");
             }
-            catch (UnauthorizedAccessException) { return Results.Forbid(); }
-            catch (InvalidOperationException ex) { return Results.BadRequest(ex.Message); }
+            catch (UnauthorizedAccessException ex) { return Results.Problem(ex.Message, statusCode: StatusCodes.Status403Forbidden); }
+            catch (InvalidOperationException ex) { return Results.BadRequest(new { error = ex.Message }); }
         });
 
         group.MapPost("/schedule/{scheduleId}/reject", async (string scheduleId, ClaimsPrincipal user, ITourRequestService service, CancellationToken cancellationToken) =>
         {
-            var userId = user.FindFirstValue(ClaimTypes.NameIdentifier) ?? throw new InvalidOperationException("User ID missing from token.");
+            var userId = user.FindFirstValue(ClaimTypes.NameIdentifier);
+            if (string.IsNullOrEmpty(userId)) return Results.Unauthorized();
+
             try
             {
                 var success = await service.RejectScheduleAsync(scheduleId, userId, cancellationToken);
                 return success ? Results.Ok() : Results.BadRequest("Cannot reject schedule.");
             }
-            catch (UnauthorizedAccessException) { return Results.Forbid(); }
-            catch (InvalidOperationException ex) { return Results.BadRequest(ex.Message); }
+            catch (UnauthorizedAccessException ex) { return Results.Problem(ex.Message, statusCode: StatusCodes.Status403Forbidden); }
+            catch (InvalidOperationException ex) { return Results.BadRequest(new { error = ex.Message }); }
         });
 
         group.MapGet("/", async (ClaimsPrincipal user, ITourRequestService service, [FromQuery] double radius = 5000, CancellationToken cancellationToken = default) =>
         {
-            var volunteerId = user.FindFirstValue(ClaimTypes.NameIdentifier) ?? throw new InvalidOperationException("User ID missing from token.");
+            var volunteerId = user.FindFirstValue(ClaimTypes.NameIdentifier);
+            if (string.IsNullOrEmpty(volunteerId)) return Results.Unauthorized();
 
-            var requests = await service.GetNearbyRequestsAsync(volunteerId, radius, cancellationToken);
-            
-            // Map the requests to a safe response DTO to avoid cyclic references or returning unnecessary internal fields
-            var response = requests.Select(r => new
+            try
             {
-                r.Id,
-                r.RequesterId,
-                r.Description,
-                r.Mode,
-                Visibility = r.Visibility,
-                Place = r.Place != null ? new 
+                var requests = await service.GetNearbyRequestsAsync(volunteerId, radius, cancellationToken);
+                
+                // Return safe DTO without RequesterId to volunteer view
+                var response = requests.Select(r => new
                 {
-                    r.Place.Id,
-                    r.Place.Name,
-                    r.Place.Description,
-                    Latitude = r.Place.Location.Y,
-                    Longitude = r.Place.Location.X
-                } : null
-            });
+                    r.Id,
+                    r.Description,
+                    r.Mode,
+                    r.Visibility,
+                    Place = r.Place != null ? new 
+                    {
+                        r.Place.Id,
+                        r.Place.Name,
+                        r.Place.Description,
+                        Latitude = r.Place.Location.Y,
+                        Longitude = r.Place.Location.X
+                    } : null
+                });
 
-            return Results.Ok(response);
+                return Results.Ok(response);
+            }
+            catch (ArgumentException ex)
+            {
+                return Results.BadRequest(new { error = ex.Message });
+            }
         });
 
         group.MapPost("/{id}/cancel", async (string id, [FromBody] CancelRequestDto dto, ClaimsPrincipal user, ITourRequestService service, CancellationToken cancellationToken) =>
         {
-            var userId = user.FindFirstValue(ClaimTypes.NameIdentifier) ?? throw new InvalidOperationException("User ID missing from token.");
+            var userId = user.FindFirstValue(ClaimTypes.NameIdentifier);
+            if (string.IsNullOrEmpty(userId)) return Results.Unauthorized();
+
             try
             {
                 var success = await service.CancelRequestAsync(id, userId, dto.Reason, cancellationToken);
                 return success ? Results.Ok() : Results.NotFound();
             }
-            catch (UnauthorizedAccessException) { return Results.Forbid(); }
-            catch (InvalidOperationException ex) { return Results.BadRequest(ex.Message); }
+            catch (UnauthorizedAccessException ex) { return Results.Problem(ex.Message, statusCode: StatusCodes.Status403Forbidden); }
+            catch (InvalidOperationException ex) { return Results.BadRequest(new { error = ex.Message }); }
         });
 
-        group.MapPost("/{id}/start", async (string id, ClaimsPrincipal user, ITourRequestService service, CancellationToken cancellationToken) =>
+        group.MapPost("/{id}/start", async (string id, ClaimsPrincipal user, ITourRequestService service, ApplicationDbContext context, CancellationToken cancellationToken) =>
         {
-            var userId = user.FindFirstValue(ClaimTypes.NameIdentifier) ?? throw new InvalidOperationException("User ID missing from token.");
+            var userId = user.FindFirstValue(ClaimTypes.NameIdentifier);
+            if (string.IsNullOrEmpty(userId)) return Results.Unauthorized();
+
             try
             {
                 var success = await service.StartTourAsync(id, userId, cancellationToken);
-                return success ? Results.Ok() : Results.NotFound();
+                if (!success) return Results.NotFound();
+
+                var session = await context.TourSessions
+                    .Where(s => s.TourRequestId == id && s.Status == SessionStatus.Active)
+                    .OrderByDescending(s => s.StartedAt)
+                    .FirstOrDefaultAsync(cancellationToken);
+
+                return Results.Ok(new { success = true, sessionId = session?.Id });
             }
-            catch (UnauthorizedAccessException) { return Results.Forbid(); }
-            catch (InvalidOperationException ex) { return Results.BadRequest(ex.Message); }
+            catch (UnauthorizedAccessException ex) { return Results.Problem(ex.Message, statusCode: StatusCodes.Status403Forbidden); }
+            catch (InvalidOperationException ex) { return Results.BadRequest(new { error = ex.Message }); }
         });
 
         group.MapPost("/{id}/complete", async (string id, ClaimsPrincipal user, ITourRequestService service, CancellationToken cancellationToken) =>
         {
-            var userId = user.FindFirstValue(ClaimTypes.NameIdentifier) ?? throw new InvalidOperationException("User ID missing from token.");
+            var userId = user.FindFirstValue(ClaimTypes.NameIdentifier);
+            if (string.IsNullOrEmpty(userId)) return Results.Unauthorized();
+
             try
             {
                 var success = await service.CompleteTourAsync(id, userId, cancellationToken);
                 return success ? Results.Ok() : Results.NotFound();
             }
-            catch (UnauthorizedAccessException) { return Results.Forbid(); }
-            catch (InvalidOperationException ex) { return Results.BadRequest(ex.Message); }
+            catch (UnauthorizedAccessException ex) { return Results.Problem(ex.Message, statusCode: StatusCodes.Status403Forbidden); }
+            catch (InvalidOperationException ex) { return Results.BadRequest(new { error = ex.Message }); }
         });
 
         group.MapPost("/{id}/interest", async (string id, ClaimsPrincipal user, ITourRequestService service, CancellationToken cancellationToken) =>
         {
-            var userId = user.FindFirstValue(ClaimTypes.NameIdentifier) ?? throw new InvalidOperationException("User ID missing from token.");
+            var userId = user.FindFirstValue(ClaimTypes.NameIdentifier);
+            if (string.IsNullOrEmpty(userId)) return Results.Unauthorized();
+
             try
             {
                 var success = await service.MarkVolunteerInterestedAsync(id, userId, cancellationToken);
                 return success ? Results.Ok() : Results.NotFound();
             }
-            catch (InvalidOperationException ex) { return Results.BadRequest(ex.Message); }
+            catch (UnauthorizedAccessException ex) { return Results.Problem(ex.Message, statusCode: StatusCodes.Status403Forbidden); }
+            catch (InvalidOperationException ex) { return Results.BadRequest(new { error = ex.Message }); }
         });
     }
 }
