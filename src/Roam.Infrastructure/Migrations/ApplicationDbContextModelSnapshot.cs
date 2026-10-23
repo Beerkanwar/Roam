@@ -185,6 +185,8 @@ namespace Roam.Infrastructure.Migrations
 
                     b.HasIndex("SessionId");
 
+                    b.HasIndex("SessionId", "SentAt");
+
                     b.ToTable("ChatMessages");
                 });
 
@@ -218,9 +220,7 @@ namespace Roam.Infrastructure.Migrations
 
                     b.HasIndex("CreatedAt");
 
-                    b.HasIndex("DonorId");
-
-                    b.HasIndex("IdempotencyKey");
+                    b.HasIndex("DonorId", "IdempotencyKey");
 
                     b.ToTable("Donations");
                 });
@@ -284,13 +284,13 @@ namespace Roam.Infrastructure.Migrations
 
                     b.HasIndex("CreatedAt");
 
-                    b.HasIndex("IdempotencyKey");
-
                     b.HasIndex("ReceiverId");
 
                     b.HasIndex("SenderId");
 
                     b.HasIndex("TourSessionId");
+
+                    b.HasIndex("SenderId", "IdempotencyKey");
 
                     b.ToTable("TipTransactions");
                 });
@@ -326,6 +326,8 @@ namespace Roam.Infrastructure.Migrations
                     b.HasIndex("Location");
 
                     NpgsqlIndexBuilderExtensions.HasMethod(b.HasIndex("Location"), "gist");
+
+                    b.HasIndex("Name");
 
                     b.ToTable("Places");
                 });

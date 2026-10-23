@@ -30,9 +30,12 @@ builder.Host.UseSerilog((context, services, configuration) => configuration
 
 // Add Database
 builder.Services.AddDbContext<ApplicationDbContext>(options =>
+{
     options.UseNpgsql(
         builder.Configuration.GetConnectionString("DefaultConnection"),
-        x => x.UseNetTopologySuite()));
+        x => x.UseNetTopologySuite());
+    options.ConfigureWarnings(w => w.Ignore(Microsoft.EntityFrameworkCore.Diagnostics.RelationalEventId.PendingModelChangesWarning));
+});
 
 // Configure Identity with lockout and password rules
 builder.Services.AddIdentityApiEndpoints<ApplicationUser>(options =>
