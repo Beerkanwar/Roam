@@ -22,6 +22,9 @@ public static class TourRequestEndpoints
             var userId = user.FindFirstValue(ClaimTypes.NameIdentifier);
             if (string.IsNullOrEmpty(userId)) return Results.Unauthorized();
 
+            if (string.IsNullOrWhiteSpace(dto.Description) || dto.Description.Length > 2000)
+                return Results.BadRequest(new { error = "Description must be between 1 and 2000 characters." });
+
             dto.RequesterId = userId;
             try
             {
@@ -38,6 +41,15 @@ public static class TourRequestEndpoints
         {
             var userId = user.FindFirstValue(ClaimTypes.NameIdentifier);
             if (string.IsNullOrEmpty(userId)) return Results.Unauthorized();
+
+            if (dto.Latitude is < -90 or > 90)
+                return Results.BadRequest(new { error = "Latitude must be between -90 and 90." });
+
+            if (dto.Longitude is < -180 or > 180)
+                return Results.BadRequest(new { error = "Longitude must be between -180 and 180." });
+
+            if (string.IsNullOrWhiteSpace(dto.Description) || dto.Description.Length > 2000)
+                return Results.BadRequest(new { error = "Description must be between 1 and 2000 characters." });
 
             dto.RequesterId = userId;
             try

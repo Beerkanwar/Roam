@@ -11,8 +11,7 @@ public class DonationConfiguration : IEntityTypeConfiguration<Donation>
     {
         builder.HasKey(d => d.Id);
 
-        builder.HasIndex(d => d.DonorId);
-        builder.HasIndex(d => d.IdempotencyKey);
+        builder.HasIndex(d => new { d.DonorId, d.IdempotencyKey });
         builder.HasIndex(d => d.CreatedAt);
 
         builder.Property(d => d.Currency)

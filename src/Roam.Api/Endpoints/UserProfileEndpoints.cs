@@ -51,8 +51,13 @@ public static class UserProfileEndpoints
             if (string.IsNullOrWhiteSpace(dto.Country) || dto.Country.Length > 100)
                 return Results.BadRequest(new { error = "Valid country is required." });
 
-            // 18+ Safeguarding check
+            // 18+ Safeguarding check with realistic bounds
             var today = DateOnly.FromDateTime(DateTime.UtcNow);
+            if (dto.DateOfBirth > today || dto.DateOfBirth < today.AddYears(-120))
+            {
+                return Results.BadRequest(new { error = "Please provide a valid date of birth." });
+            }
+
             var age = today.Year - dto.DateOfBirth.Year;
             if (dto.DateOfBirth > today.AddYears(-age)) age--;
 
