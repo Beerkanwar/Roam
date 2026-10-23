@@ -41,11 +41,25 @@ public class TourRequestExpirationWorker : BackgroundService
 
                 if (expiredRequests.Count > 0)
                 {
+                    var notificationService = scope.ServiceProvider.GetRequiredService<Roam.Application.TourRequests.ITourNotificationService>();
                     foreach (var req in expiredRequests)
                     {
                         req.TransitionTo(TourRequestStatus.Expired);
                     }
                     await dbContext.SaveChangesAsync(stoppingToken);
+
+                    foreach (var req in expiredRequests)
+                    {
+                        try
+                        {
+                            await notificationService.TourRequestExpiredAsync(req.Id, req.RequesterId);
+                        }
+                        catch (Exception notifyEx)
+                        {
+                            _logger.LogWarning(notifyEx, "Failed to send expiration notification for request {RequestId}", req.Id);
+                        }
+                    }
+
                     _logger.LogInformation("Expired {Count} stale tour requests.", expiredRequests.Count);
                 }
             }

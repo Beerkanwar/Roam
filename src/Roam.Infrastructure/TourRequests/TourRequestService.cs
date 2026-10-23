@@ -241,7 +241,17 @@ public class TourRequestService : ITourRequestService
         request.CancellationReason = reason;
         request.CancelledAt = DateTime.UtcNow;
 
+        var counterpartId = request.RequesterId == userId 
+            ? request.AssignedVolunteerId 
+            : request.RequesterId;
+
         await _context.SaveChangesAsync(cancellationToken);
+
+        if (!string.IsNullOrEmpty(counterpartId))
+        {
+            await _notificationService.TourRequestCancelledAsync(id, userId, counterpartId);
+        }
+
         return true;
     }
 
@@ -251,8 +261,15 @@ public class TourRequestService : ITourRequestService
         if (request == null) return false;
 
         request.TransitionTo(TourRequestStatus.Expired);
+        var requesterId = request.RequesterId;
         
         await _context.SaveChangesAsync(cancellationToken);
+
+        if (!string.IsNullOrEmpty(requesterId))
+        {
+            await _notificationService.TourRequestExpiredAsync(id, requesterId);
+        }
+
         return true;
     }
 
@@ -283,7 +300,31 @@ public class TourRequestService : ITourRequestService
         if (request.AssignedVolunteerId != volunteerId)
             throw new UnauthorizedAccessException("Only the assigned volunteer can start this tour.");
 
-        request.TransitionTo(TourRequestStatus.Active);
+        // Check if an active session already exists (idempotency)
+        var existingActiveSession = await _context.TourSessions
+            .FirstOrDefaultAsync(s => s.TourRequestId == id && s.Status == SessionStatus.Active, cancellationToken);
+        if (existingActiveSession != null)
+        {
+            return true;
+        }
+
+        // Atomic transition from Accepted / Confirmed to Active
+        var rowsAffected = await _context.TourRequests
+            .Where(r => r.Id == id && 
+                        r.AssignedVolunteerId == volunteerId &&
+                        (r.Status == TourRequestStatus.Accepted || r.Status == TourRequestStatus.Confirmed))
+            .ExecuteUpdateAsync(s => s.SetProperty(r => r.Status, TourRequestStatus.Active), cancellationToken);
+
+        if (rowsAffected == 0)
+        {
+            var activeSession = await _context.TourSessions
+                .FirstOrDefaultAsync(s => s.TourRequestId == id && s.Status == SessionStatus.Active, cancellationToken);
+            if (activeSession != null)
+            {
+                return true;
+            }
+            throw new InvalidOperationException($"Cannot start tour request in status {request.Status}.");
+        }
 
         // Atomically create TourSession and participants
         var session = new TourSession

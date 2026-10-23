@@ -46,4 +46,20 @@ public class SignalRTourNotificationService : ITourNotificationService
         await _notificationHub.Clients.User(volunteerId).TourEnded(sessionId);
         await _tourHub.Clients.Group($"tour:{sessionId}").TourEnded(sessionId);
     }
+
+    public async Task TourRequestCancelledAsync(string requestId, string cancelledByUserId, string counterpartId)
+    {
+        if (!string.IsNullOrEmpty(counterpartId))
+        {
+            await _notificationHub.Clients.User(counterpartId).TourRequestCancelled(requestId, cancelledByUserId);
+        }
+    }
+
+    public async Task TourRequestExpiredAsync(string requestId, string requesterId)
+    {
+        if (!string.IsNullOrEmpty(requesterId))
+        {
+            await _notificationHub.Clients.User(requesterId).TourRequestExpired(requestId);
+        }
+    }
 }

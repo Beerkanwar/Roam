@@ -47,33 +47,37 @@ public class ChatService : IChatService
         if (trimmedText.Length > 2000)
             throw new ArgumentException("Message text cannot exceed 2000 characters.", nameof(text));
 
-        var isParticipant = await IsUserParticipantAsync(sessionId, senderId, cancellationToken);
-        if (!isParticipant)
-        {
-            throw new UnauthorizedAccessException("User is not a participant in this session.");
-        }
-
-        // Check if sender is blocked by or has blocked the session host or participants
+        // 1. Fetch session with status, host, and participants in a single query
         var session = await _context.TourSessions
             .Include(s => s.Participants)
             .AsNoTracking()
             .FirstOrDefaultAsync(s => s.Id == sessionId, cancellationToken);
 
-        if (session != null)
+        if (session == null)
+            throw new ArgumentException("Tour session not found.", nameof(sessionId));
+
+        if (session.Status != Domain.TourSessions.SessionStatus.Active)
+            throw new InvalidOperationException("Cannot send messages to an inactive or completed session.");
+
+        bool isParticipant = session.HostVolunteerId == senderId || session.Participants.Any(p => p.UserId == senderId);
+        if (!isParticipant)
         {
-            var counterpartId = session.HostVolunteerId == senderId
-                ? session.Participants.FirstOrDefault(p => p.UserId != senderId)?.UserId
-                : session.HostVolunteerId;
+            throw new UnauthorizedAccessException("User is not a participant in this session.");
+        }
 
-            if (!string.IsNullOrEmpty(counterpartId))
-            {
-                var isBlocked = await _context.UserBlocks.AnyAsync(b =>
-                    (b.BlockerId == senderId && b.BlockedId == counterpartId) ||
-                    (b.BlockerId == counterpartId && b.BlockedId == senderId), cancellationToken);
+        // 2. Check if sender is blocked by or has blocked the session counterpart
+        var counterpartId = session.HostVolunteerId == senderId
+            ? session.Participants.FirstOrDefault(p => p.UserId != senderId)?.UserId
+            : session.HostVolunteerId;
 
-                if (isBlocked)
-                    throw new InvalidOperationException("Cannot send messages to a blocked user.");
-            }
+        if (!string.IsNullOrEmpty(counterpartId))
+        {
+            var isBlocked = await _context.UserBlocks.AnyAsync(b =>
+                (b.BlockerId == senderId && b.BlockedId == counterpartId) ||
+                (b.BlockerId == counterpartId && b.BlockedId == senderId), cancellationToken);
+
+            if (isBlocked)
+                throw new InvalidOperationException("Cannot send messages to a blocked user.");
         }
 
         var message = new ChatMessage
