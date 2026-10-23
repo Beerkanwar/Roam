@@ -26,6 +26,7 @@ jobs:
         dotnet restore tests/Roam.Application.Tests/Roam.Application.Tests.csproj
         dotnet restore tests/Roam.Infrastructure.Tests/Roam.Infrastructure.Tests.csproj
         dotnet restore tests/Roam.Api.Tests/Roam.Api.Tests.csproj
+        dotnet restore tests/Roam.IntegrationTests/Roam.IntegrationTests.csproj
 
     - name: Scan vulnerable packages
       run: |
@@ -39,13 +40,15 @@ jobs:
         dotnet build tests/Roam.Application.Tests/Roam.Application.Tests.csproj -c Release --no-restore
         dotnet build tests/Roam.Infrastructure.Tests/Roam.Infrastructure.Tests.csproj -c Release --no-restore
         dotnet build tests/Roam.Api.Tests/Roam.Api.Tests.csproj -c Release --no-restore
+        dotnet build tests/Roam.IntegrationTests/Roam.IntegrationTests.csproj -c Release --no-restore
 
-    - name: Run unit tests
+    - name: Run unit and integration tests
       run: |
         dotnet test tests/Roam.Domain.Tests/Roam.Domain.Tests.csproj -c Release --no-build --verbosity normal
         dotnet test tests/Roam.Application.Tests/Roam.Application.Tests.csproj -c Release --no-build --verbosity normal
         dotnet test tests/Roam.Infrastructure.Tests/Roam.Infrastructure.Tests.csproj -c Release --no-build --verbosity normal
         dotnet test tests/Roam.Api.Tests/Roam.Api.Tests.csproj -c Release --no-build --verbosity normal
+        dotnet test tests/Roam.IntegrationTests/Roam.IntegrationTests.csproj -c Release --no-build --verbosity normal
 
   frontend:
     name: Frontend Lint & Build

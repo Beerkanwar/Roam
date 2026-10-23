@@ -1,3 +1,5 @@
+using Microsoft.Extensions.Configuration;
+using Roam.Infrastructure.Maps;
 using Xunit;
 
 namespace Roam.Infrastructure.Tests;
@@ -5,9 +7,13 @@ namespace Roam.Infrastructure.Tests;
 public class BasicInfrastructureTests
 {
     [Fact]
-    public void Verify_Infrastructure_Assembly_Loads()
+    public void OsmGeocodingService_InitializesWithDefaultConfiguration()
     {
-        // Simple assertion to verify the test suite executes successfully
-        Assert.True(true);
+        var config = new ConfigurationBuilder().Build();
+        var httpClient = new HttpClient();
+        var service = new OsmGeocodingService(httpClient, config);
+
+        Assert.NotNull(service);
+        Assert.True(httpClient.DefaultRequestHeaders.Contains("User-Agent"));
     }
 }
