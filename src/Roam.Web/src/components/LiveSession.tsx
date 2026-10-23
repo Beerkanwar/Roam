@@ -51,20 +51,34 @@ const LiveSession: React.FC<LiveSessionProps> = ({ sessionId, token, targetUserI
             try {
                 // 1. Fetch ICE Servers (TURN credentials)
                 const headers: HeadersInit = authToken ? { 'Authorization': `Bearer ${authToken}` } : {};
-                const turnResponse = await fetch(`${API_BASE}/api/v1/ice-servers`, { headers });
-                const turnData = await turnResponse.json();
+                let iceServers: RTCIceServer[] = [
+                    { urls: ['stun:stun.l.google.com:19302', 'stun:stun1.l.google.com:19302'] }
+                ];
+                try {
+                    const turnResponse = await fetch(`${API_BASE}/api/v1/ice-servers`, { headers });
+                    if (turnResponse.ok) {
+                        const turnData = await turnResponse.json();
+                        const retrieved = Array.isArray(turnData) ? turnData : (turnData.servers || []);
+                        if (retrieved.length > 0) {
+                            iceServers = retrieved;
+                        }
+                    } else {
+                        log(`Using fallback STUN servers (ICE endpoint status: ${turnResponse.status})`);
+                    }
+                } catch (iceErr) {
+                    log(`Failed to fetch ICE credentials (${iceErr}), using default STUN`);
+                }
                 
                 if (!isMounted) return;
 
                 // 2. Initialize RTCPeerConnection safely handling array or object
-                const iceServers = Array.isArray(turnData) ? turnData : (turnData.servers || []);
                 peerConnection.current = new RTCPeerConnection({
                     iceServers: iceServers
                 });
 
                 peerConnection.current.onicecandidate = (event) => {
                     if (event.candidate && tConnection?.state === signalR.HubConnectionState.Connected) {
-                        tConnection.invoke('SendIceCandidate', sessionId, JSON.stringify(event.candidate))
+                        tConnection.invoke('SendIceCandidate', sessionId, JSON.stringify(event.candidate), null)
                             .catch(err => console.error(err));
                     }
                 };
@@ -113,7 +127,7 @@ const LiveSession: React.FC<LiveSessionProps> = ({ sessionId, token, targetUserI
                         await peerConnection.current?.setLocalDescription(answer);
                         
                         if (tConnection.state === signalR.HubConnectionState.Connected) {
-                            tConnection.invoke('SendAnswer', sessionId, JSON.stringify(answer));
+                            tConnection.invoke('SendAnswer', sessionId, JSON.stringify(answer), senderId);
                         }
                     } catch (e) {
                         log(`Error handling offer: ${e}`);

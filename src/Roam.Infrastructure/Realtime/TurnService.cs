@@ -25,7 +25,15 @@ public class TurnService : ITurnService
         var unixTimestamp = DateTimeOffset.UtcNow.ToUnixTimeSeconds() + ttlSeconds;
         var username = $"{unixTimestamp}:{userId}";
 
-        var secret = string.IsNullOrEmpty(_options.Password) ? "roam-default-turn-secret" : _options.Password;
+        var secret = !string.IsNullOrWhiteSpace(_options.Password) 
+            ? _options.Password 
+            : Environment.GetEnvironmentVariable("TURN_SECRET");
+
+        if (string.IsNullOrWhiteSpace(secret))
+        {
+            throw new InvalidOperationException("TURN server credentials are not configured. Set TurnServer:Password or TURN_SECRET environment variable.");
+        }
+
         var hmac = new HMACSHA1(Encoding.UTF8.GetBytes(secret));
         var hash = hmac.ComputeHash(Encoding.UTF8.GetBytes(username));
         var credential = Convert.ToBase64String(hash);
