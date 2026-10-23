@@ -248,6 +248,9 @@ public static class UserProfileEndpoints
             if (appUser.AgeCategory != AgeCategory.Adult)
                 return Results.Problem("Only adult users (18+) can apply to be volunteers.", statusCode: StatusCodes.Status403Forbidden);
 
+            if (appUser.VolunteerStatus == VolunteerStatus.Revoked)
+                return Results.Problem("Your volunteer privileges have been revoked by platform administration. Please contact support.", statusCode: StatusCodes.Status403Forbidden);
+
             if (appUser.VolunteerStatus == VolunteerStatus.Approved)
                 return Results.Ok(new { message = "Already approved as a volunteer." });
 

@@ -353,6 +353,10 @@ public class TourRequestService : ITourRequestService
         if (radiusMeters <= 0 || radiusMeters > 50000)
             throw new ArgumentException("Radius must be between 1 and 50,000 meters.");
 
+        var volunteer = await _context.Users.FindAsync(new object[] { volunteerId }, cancellationToken);
+        if (volunteer == null || volunteer.VolunteerStatus != VolunteerStatus.Approved)
+            throw new UnauthorizedAccessException("Only approved volunteers can view nearby tour requests.");
+
         var userLocation = await _context.UserLocations
             .AsNoTracking()
             .FirstOrDefaultAsync(l => l.UserId == volunteerId, cancellationToken);

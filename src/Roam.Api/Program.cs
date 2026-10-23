@@ -121,8 +121,12 @@ builder.Services.AddScoped<Roam.Application.Payments.IPaymentService, Roam.Infra
 builder.Services.Configure<Roam.Application.Sessions.TurnServerOptions>(builder.Configuration.GetSection(Roam.Application.Sessions.TurnServerOptions.Position));
 builder.Services.AddScoped<Roam.Application.Sessions.ITurnService, Roam.Infrastructure.Realtime.TurnService>();
 
-// Add SignalR
+// Add In-Memory Cache
+builder.Services.AddMemoryCache();
+
+// Add SignalR with Security Filter
 builder.Services.AddSignalR();
+builder.Services.AddSingleton<Microsoft.AspNetCore.SignalR.IHubFilter, SignalRSecurityFilter>();
 
 // Add Health Checks
 builder.Services.AddHealthChecks()
@@ -169,8 +173,8 @@ app.UseStatusCodePages();
 app.UseCors();
 
 app.UseAuthentication();
-app.UseMiddleware<AccountStatusMiddleware>();
 app.UseRateLimiter();
+app.UseMiddleware<AccountStatusMiddleware>();
 app.UseAuthorization();
 
 app.UseSerilogRequestLogging();

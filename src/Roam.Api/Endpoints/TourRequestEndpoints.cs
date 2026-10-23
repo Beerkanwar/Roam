@@ -140,7 +140,8 @@ public static class TourRequestEndpoints
             {
                 return Results.BadRequest(new { error = ex.Message });
             }
-        });
+        })
+        .RequireAuthorization("RequireApprovedVolunteer");
 
         group.MapPost("/{id}/cancel", async (string id, [FromBody] CancelRequestDto dto, ClaimsPrincipal user, ITourRequestService service, CancellationToken cancellationToken) =>
         {
