@@ -1,6 +1,7 @@
 using System;
 using System.Threading.Tasks;
 using Microsoft.AspNetCore.SignalR.Client;
+using Microsoft.Maui.Devices;
 using Roam.Contracts.Chat;
 
 namespace Roam.App.Services;
@@ -15,9 +16,18 @@ public class SignalRService : IAsyncDisposable
     public event Action<string>? OnParticipantLeft;
     public event Action<ChatMessageDto>? OnChatMessageReceived;
 
-    public SignalRService(string baseApiUrl = "https://localhost:7217")
+    public static string GetDefaultBaseUrl()
     {
-        _baseApiUrl = baseApiUrl;
+#if ANDROID
+        return DeviceInfo.DeviceType == DeviceType.Virtual ? "http://10.0.2.2:5000" : "https://localhost:7217";
+#else
+        return "https://localhost:7217";
+#endif
+    }
+
+    public SignalRService(string? baseApiUrl = null)
+    {
+        _baseApiUrl = !string.IsNullOrWhiteSpace(baseApiUrl) ? baseApiUrl : GetDefaultBaseUrl();
     }
 
     public async Task InitializeAsync(string token)
