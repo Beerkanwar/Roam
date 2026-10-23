@@ -41,9 +41,11 @@ public class PlaceService : IPlaceService
 
         foreach (var g in geoResults)
         {
-            // Deduplicate: check if place already exists with matching name
+            var point = new NetTopologySuite.Geometries.Point(g.Longitude, g.Latitude) { SRID = 4326 };
+
+            // Deduplicate: check if place already exists with matching name within ~100 meters
             var exists = await _context.Places.AnyAsync(
-                p => p.Name.ToLower() == g.Name.ToLower(), 
+                p => p.Name.ToLower() == g.Name.ToLower() && p.Location.IsWithinDistance(point, 0.001), 
                 cancellationToken);
 
             if (!exists)
@@ -52,7 +54,7 @@ public class PlaceService : IPlaceService
                 {
                     Name = g.Name,
                     Description = g.Description,
-                    Location = new NetTopologySuite.Geometries.Point(g.Longitude, g.Latitude) { SRID = 4326 }
+                    Location = point
                 });
             }
         }

@@ -12,6 +12,7 @@ public class ChatMessageConfiguration : IEntityTypeConfiguration<ChatMessage>
         
         builder.HasIndex(c => c.SessionId);
         builder.HasIndex(c => c.SentAt);
+        builder.HasIndex(c => new { c.SessionId, c.SentAt });
         
         builder.Property(c => c.Text)
             .IsRequired()

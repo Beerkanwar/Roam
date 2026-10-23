@@ -9,6 +9,7 @@ public class UserBlockConfiguration : IEntityTypeConfiguration<UserBlock>
     public void Configure(EntityTypeBuilder<UserBlock> builder)
     {
         builder.HasKey(ub => new { ub.BlockerId, ub.BlockedId });
+        builder.HasIndex(ub => ub.BlockedId);
         
         builder.HasOne<ApplicationUser>()
             .WithMany()

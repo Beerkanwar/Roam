@@ -1,4 +1,5 @@
 using System.Text.Json;
+using Microsoft.Extensions.Configuration;
 using Roam.Application.Places;
 
 namespace Roam.Infrastructure.Maps;
@@ -6,17 +7,26 @@ namespace Roam.Infrastructure.Maps;
 public class OsmGeocodingService : IGeocodingService
 {
     private readonly HttpClient _httpClient;
+    private readonly string _endpoint;
+    private readonly string? _apiKey;
 
-    public OsmGeocodingService(HttpClient httpClient)
+    public OsmGeocodingService(HttpClient httpClient, IConfiguration configuration)
     {
         _httpClient = httpClient;
-        _httpClient.DefaultRequestHeaders.Add("User-Agent", "RoamApp/1.0");
+        _endpoint = configuration["Geocoding:Endpoint"] ?? "https://nominatim.openstreetmap.org/search";
+        _apiKey = configuration["Geocoding:ApiKey"];
+
+        var userAgent = configuration["Geocoding:UserAgent"] ?? "RoamApp/1.0 (https://github.com/Beerkanwar/Roam; support@roam.local)";
+        _httpClient.DefaultRequestHeaders.Add("User-Agent", userAgent);
     }
 
     public async Task<IEnumerable<GeocodingResult>> GeocodeAsync(string query, CancellationToken cancellationToken = default)
     {
-        // Example: https://nominatim.openstreetmap.org/search?q=query&format=json&limit=5
-        var url = $"https://nominatim.openstreetmap.org/search?q={Uri.EscapeDataString(query)}&format=json&limit=5";
+        var url = $"{_endpoint}?q={Uri.EscapeDataString(query)}&format=json&limit=5";
+        if (!string.IsNullOrWhiteSpace(_apiKey) && !_apiKey.Contains("dummy"))
+        {
+            url += $"&key={Uri.EscapeDataString(_apiKey)}";
+        }
         
         var response = await _httpClient.GetAsync(url, cancellationToken);
         if (!response.IsSuccessStatusCode)

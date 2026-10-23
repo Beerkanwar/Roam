@@ -48,6 +48,16 @@ public class PaymentService : IPaymentService
         if (receiver.VolunteerSettings?.TipEnabled != true)
             throw new InvalidOperationException("The volunteer does not have tipping enabled.");
 
+        // If receiver has a configured TipAccount, verify it is enabled
+        if (Guid.TryParse(receiverId, out var receiverGuid))
+        {
+            var tipAccount = await _context.TipAccounts.FirstOrDefaultAsync(a => a.UserId == receiverGuid);
+            if (tipAccount != null && !tipAccount.IsEnabled)
+            {
+                throw new InvalidOperationException("The volunteer's tip account is disabled.");
+            }
+        }
+
         // 2. If tourSessionId is provided, verify both participants were in that session
         if (!string.IsNullOrEmpty(tourSessionId))
         {
