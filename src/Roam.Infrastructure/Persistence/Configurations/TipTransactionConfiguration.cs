@@ -15,7 +15,7 @@ public class TipTransactionConfiguration : IEntityTypeConfiguration<TipTransacti
         builder.HasIndex(t => t.SenderId);
         builder.HasIndex(t => t.ReceiverId);
         builder.HasIndex(t => t.TourSessionId);
-        builder.HasIndex(t => new { t.SenderId, t.IdempotencyKey });
+        builder.HasIndex(t => new { t.SenderId, t.IdempotencyKey }).IsUnique();
         builder.HasIndex(t => t.CreatedAt);
 
         builder.Property(t => t.Currency)

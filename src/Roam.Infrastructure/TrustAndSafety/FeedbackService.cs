@@ -62,25 +62,39 @@ public class FeedbackService : IFeedbackService
         var feedback = new Feedback(tourSessionId, reviewerId, targetUserId, rating, comments);
         _context.Feedbacks.Add(feedback);
 
-        // Map feedback to a reliability event
-        int scoreDelta = rating switch
+        // Map feedback to a dedicated reliability event with counterpart score capping (H6)
+        int rawDelta = rating switch
         {
-            FeedbackRating.Positive => +10,
+            FeedbackRating.Positive => +5,
             FeedbackRating.Neutral => 0,
-            FeedbackRating.Negative => -10,
+            FeedbackRating.Negative => -5,
             _ => 0
         };
 
-        if (scoreDelta != 0)
+        if (rawDelta != 0)
         {
-            var reliabilityEvent = new ReliabilityEvent
+            // Cumulative cap per reviewer-target pair: [-15, +15] to prevent farming or weaponization
+            var existingImpact = await _context.ReliabilityEvents
+                .Where(e => e.UserId == targetUserId &&
+                            (e.Type == ReliabilityEventType.PeerFeedbackPositive || e.Type == ReliabilityEventType.PeerFeedbackNegative) &&
+                            _context.Feedbacks.Any(f => f.TourSessionId == e.RelatedSessionId && f.ReviewerId == reviewerId && f.TargetUserId == targetUserId))
+                .SumAsync(e => (int?)e.Weight) ?? 0;
+
+            int clampedDelta = rawDelta > 0 
+                ? Math.Clamp(rawDelta, 0, Math.Max(0, 15 - existingImpact))
+                : Math.Clamp(rawDelta, Math.Min(0, -15 - existingImpact), 0);
+
+            if (clampedDelta != 0)
             {
-                UserId = targetUserId,
-                Type = rating == FeedbackRating.Negative ? ReliabilityEventType.ModerationViolation : ReliabilityEventType.CompletedTour,
-                RelatedSessionId = tourSessionId,
-                Weight = scoreDelta
-            };
-            _context.ReliabilityEvents.Add(reliabilityEvent);
+                var reliabilityEvent = new ReliabilityEvent
+                {
+                    UserId = targetUserId,
+                    Type = rating == FeedbackRating.Negative ? ReliabilityEventType.PeerFeedbackNegative : ReliabilityEventType.PeerFeedbackPositive,
+                    RelatedSessionId = tourSessionId,
+                    Weight = clampedDelta
+                };
+                _context.ReliabilityEvents.Add(reliabilityEvent);
+            }
         }
 
         await _context.SaveChangesAsync();

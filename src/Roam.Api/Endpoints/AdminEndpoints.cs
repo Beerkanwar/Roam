@@ -18,7 +18,8 @@ public static class AdminEndpoints
     {
         var group = builder.MapGroup("/api/v1/admin")
             .WithTags("Admin")
-            .RequireAuthorization("RequireAdminRole");
+            .RequireAuthorization("RequireAdminRole")
+            .RequireRateLimiting("UserPolicy");
 
         // List pending volunteer applications
         group.MapGet("/volunteers/pending", async (ApplicationDbContext context, CancellationToken cancellationToken) =>

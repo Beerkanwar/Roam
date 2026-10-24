@@ -8,5 +8,7 @@ public enum ReliabilityEventType
     NoShow,
     ConfirmedAttendance,
     ValidatedReport,
-    ModerationViolation
+    ModerationViolation,
+    PeerFeedbackPositive,
+    PeerFeedbackNegative
 }

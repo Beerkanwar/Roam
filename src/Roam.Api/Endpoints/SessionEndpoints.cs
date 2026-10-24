@@ -14,6 +14,7 @@ public static class SessionEndpoints
     {
         var group = app.MapGroup("/api/v1/ice-servers")
             .RequireAuthorization()
+            .RequireRateLimiting("UserPolicy")
             .WithTags("Sessions")
             .WithApiVersionSet(app.NewApiVersionSet().Build())
             .HasApiVersion(1, 0);

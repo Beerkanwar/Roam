@@ -17,6 +17,31 @@ public class TrustAndSafetyService : ITrustAndSafetyService
 
     public async Task<Report> SubmitReportAsync(CreateReportDto dto, CancellationToken cancellationToken = default)
     {
+        if (dto.ReporterId == dto.ReportedUserId)
+            throw new InvalidOperationException("Users cannot submit reports against themselves.");
+
+        var reportedUserExists = await _context.Users.AnyAsync(u => u.Id == dto.ReportedUserId, cancellationToken);
+        if (!reportedUserExists)
+            throw new ArgumentException("The reported user does not exist.", nameof(dto.ReportedUserId));
+
+        // Verify session participation if a session ID was provided
+        if (!string.IsNullOrEmpty(dto.TourSessionId))
+        {
+            var session = await _context.TourSessions
+                .Include(s => s.Participants)
+                .AsNoTracking()
+                .FirstOrDefaultAsync(s => s.Id == dto.TourSessionId, cancellationToken);
+
+            if (session == null)
+                throw new ArgumentException("Specified tour session not found.", nameof(dto.TourSessionId));
+
+            bool reporterInSession = session.HostVolunteerId == dto.ReporterId || session.Participants.Any(p => p.UserId == dto.ReporterId);
+            bool reportedInSession = session.HostVolunteerId == dto.ReportedUserId || session.Participants.Any(p => p.UserId == dto.ReportedUserId);
+
+            if (!reporterInSession || !reportedInSession)
+                throw new InvalidOperationException("Both the reporter and reported user must have participated in the specified session.");
+        }
+
         // Deduplicate: check if an identical pending report exists
         bool alreadyPending = await _context.Reports.AnyAsync(r =>
             r.ReporterId == dto.ReporterId &&

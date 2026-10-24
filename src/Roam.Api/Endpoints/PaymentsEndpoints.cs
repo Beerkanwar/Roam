@@ -15,6 +15,7 @@ public static class PaymentsEndpoints
     {
         var group = app.MapGroup("/api/v1/payments")
             .RequireAuthorization()
+            .RequireRateLimiting("UserPolicy")
             .WithTags("Payments");
 
         group.MapPost("/tips", async (
@@ -49,6 +50,25 @@ public static class PaymentsEndpoints
         })
         .WithName("SubmitTip")
         .WithSummary("Submit a tip to a volunteer");
+
+        group.MapPost("/tips/{id}/settle", async (
+            string id,
+            [FromQuery] bool succeeded,
+            Roam.Infrastructure.Persistence.ApplicationDbContext dbContext) =>
+        {
+            var tip = await dbContext.TipTransactions.FindAsync(id);
+            if (tip == null) return Results.NotFound();
+
+            if (succeeded)
+                tip.MarkCompleted();
+            else
+                tip.MarkFailed();
+
+            await dbContext.SaveChangesAsync();
+            return Results.Ok(new { tip.Id, Status = tip.Status.ToString() });
+        })
+        .WithName("SettleTip")
+        .WithSummary("Settle a tip transaction upon PSP confirmation");
 
         group.MapPost("/donations", async (
             [FromBody] SubmitDonationRequest request,

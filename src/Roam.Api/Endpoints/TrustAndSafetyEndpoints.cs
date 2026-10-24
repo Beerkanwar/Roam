@@ -17,10 +17,23 @@ public static class TrustAndSafetyEndpoints
 
         group.MapPost("/reports", async (ClaimsPrincipal user, [FromBody] CreateReportDto dto, ITrustAndSafetyService service, CancellationToken cancellationToken) =>
         {
-            dto.ReporterId = user.FindFirstValue(ClaimTypes.NameIdentifier) ?? throw new InvalidOperationException("User ID missing from token.");
+            var userId = user.FindFirstValue(ClaimTypes.NameIdentifier);
+            if (string.IsNullOrEmpty(userId)) return Results.Unauthorized();
 
-            var report = await service.SubmitReportAsync(dto, cancellationToken);
-            return Results.Created($"/api/v1/trust-safety/reports/{report.Id}", report);
+            dto.ReporterId = userId;
+            try
+            {
+                var report = await service.SubmitReportAsync(dto, cancellationToken);
+                return Results.Created($"/api/v1/trust-safety/reports/{report.Id}", report);
+            }
+            catch (ArgumentException ex)
+            {
+                return Results.BadRequest(new { error = ex.Message });
+            }
+            catch (InvalidOperationException ex)
+            {
+                return Results.Conflict(new { error = ex.Message });
+            }
         })
         .RequireRateLimiting("ReportsPolicy");
 
@@ -33,16 +46,30 @@ public static class TrustAndSafetyEndpoints
         // Blocking endpoints
         group.MapPost("/blocks/{blockedId}", async (string blockedId, ClaimsPrincipal user, ITrustAndSafetyService service, CancellationToken cancellationToken) =>
         {
-            var blockerId = user.FindFirstValue(ClaimTypes.NameIdentifier) ?? throw new InvalidOperationException("User ID missing.");
-            await service.BlockUserAsync(blockerId, blockedId, cancellationToken);
-            return Results.Ok();
+            var blockerId = user.FindFirstValue(ClaimTypes.NameIdentifier);
+            if (string.IsNullOrEmpty(blockerId)) return Results.Unauthorized();
+
+            try
+            {
+                await service.BlockUserAsync(blockerId, blockedId, cancellationToken);
+                return Results.Ok();
+            }
+            catch (ArgumentException ex) { return Results.BadRequest(new { error = ex.Message }); }
+            catch (InvalidOperationException ex) { return Results.BadRequest(new { error = ex.Message }); }
         });
 
         group.MapDelete("/blocks/{blockedId}", async (string blockedId, ClaimsPrincipal user, ITrustAndSafetyService service, CancellationToken cancellationToken) =>
         {
-            var blockerId = user.FindFirstValue(ClaimTypes.NameIdentifier) ?? throw new InvalidOperationException("User ID missing.");
-            await service.UnblockUserAsync(blockerId, blockedId, cancellationToken);
-            return Results.NoContent();
+            var blockerId = user.FindFirstValue(ClaimTypes.NameIdentifier);
+            if (string.IsNullOrEmpty(blockerId)) return Results.Unauthorized();
+
+            try
+            {
+                await service.UnblockUserAsync(blockerId, blockedId, cancellationToken);
+                return Results.NoContent();
+            }
+            catch (ArgumentException ex) { return Results.BadRequest(new { error = ex.Message }); }
+            catch (InvalidOperationException ex) { return Results.BadRequest(new { error = ex.Message }); }
         });
 
         group.MapGet("/blocks", async (ClaimsPrincipal user, ITrustAndSafetyService service, CancellationToken cancellationToken) =>

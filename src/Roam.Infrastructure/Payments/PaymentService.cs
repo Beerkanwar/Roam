@@ -24,14 +24,22 @@ public class PaymentService : IPaymentService
 
     public async Task<TipTransaction> SubmitTipAsync(string senderId, string receiverId, decimal amount, string currency, string? tourSessionId, string? idempotencyKey = null)
     {
-        if (amount <= 0)
-            throw new ArgumentException("Tip amount must be greater than zero.", nameof(amount));
+        if (amount <= 0 || amount > 1000m)
+            throw new ArgumentException("Tip amount must be between 0.01 and 1000.00.", nameof(amount));
 
         if (string.IsNullOrWhiteSpace(currency) || !AllowedCurrencies.Contains(currency))
             throw new ArgumentException($"Currency '{currency}' is not supported.", nameof(currency));
 
         if (senderId == receiverId)
             throw new InvalidOperationException("Sender cannot tip themselves.");
+
+        // Check if sender or receiver has blocked the other
+        var isBlocked = await _context.UserBlocks.AnyAsync(b =>
+            (b.BlockerId == senderId && b.BlockedId == receiverId) ||
+            (b.BlockerId == receiverId && b.BlockedId == senderId));
+
+        if (isBlocked)
+            throw new InvalidOperationException("Cannot send tips to a blocked user.");
 
         // 1. Verify receiver exists, is an approved volunteer, and has tipping enabled
         var receiver = await _context.Users
@@ -96,8 +104,8 @@ public class PaymentService : IPaymentService
 
     public async Task<Donation> SubmitDonationAsync(decimal amount, string currency, string? donorId, string? idempotencyKey = null)
     {
-        if (amount <= 0)
-            throw new ArgumentException("Donation amount must be greater than zero.", nameof(amount));
+        if (amount <= 0 || amount > 1000m)
+            throw new ArgumentException("Donation amount must be between 0.01 and 1000.00.", nameof(amount));
 
         if (string.IsNullOrWhiteSpace(currency) || !AllowedCurrencies.Contains(currency))
             throw new ArgumentException($"Currency '{currency}' is not supported.", nameof(currency));
