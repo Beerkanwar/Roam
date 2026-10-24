@@ -21,6 +21,7 @@ namespace Roam.Infrastructure.Migrations
                 .HasAnnotation("ProductVersion", "10.0.12")
                 .HasAnnotation("Relational:MaxIdentifierLength", 63);
 
+            NpgsqlModelBuilderExtensions.HasPostgresExtension(modelBuilder, "pg_trgm");
             NpgsqlModelBuilderExtensions.HasPostgresExtension(modelBuilder, "postgis");
             NpgsqlModelBuilderExtensions.UseIdentityByDefaultColumns(modelBuilder);
 
@@ -220,7 +221,8 @@ namespace Roam.Infrastructure.Migrations
 
                     b.HasIndex("CreatedAt");
 
-                    b.HasIndex("DonorId", "IdempotencyKey");
+                    b.HasIndex("DonorId", "IdempotencyKey")
+                        .IsUnique();
 
                     b.ToTable("Donations");
                 });
@@ -290,7 +292,8 @@ namespace Roam.Infrastructure.Migrations
 
                     b.HasIndex("TourSessionId");
 
-                    b.HasIndex("SenderId", "IdempotencyKey");
+                    b.HasIndex("SenderId", "IdempotencyKey")
+                        .IsUnique();
 
                     b.ToTable("TipTransactions");
                 });
@@ -328,6 +331,9 @@ namespace Roam.Infrastructure.Migrations
                     NpgsqlIndexBuilderExtensions.HasMethod(b.HasIndex("Location"), "gist");
 
                     b.HasIndex("Name");
+
+                    NpgsqlIndexBuilderExtensions.HasMethod(b.HasIndex("Name"), "gin");
+                    NpgsqlIndexBuilderExtensions.HasOperators(b.HasIndex("Name"), new[] { "gin_trgm_ops" });
 
                     b.ToTable("Places");
                 });

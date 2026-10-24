@@ -23,39 +23,46 @@ public class PlaceService : IPlaceService
 
         var normalizedQuery = query.Trim().ToLowerInvariant();
 
-        // 1. Search local DB first
+        // 1. Search local DB first with trigram index support
         var localPlaces = await _context.Places
-            .Where(p => p.Name.ToLower().Contains(normalizedQuery))
+            .Where(p => EF.Functions.ILike(p.Name, $"%{normalizedQuery}%"))
             .OrderBy(p => p.Name)
             .Take(10)
             .ToListAsync(cancellationToken);
 
-        if (localPlaces.Count > 0)
+        // If local results are sufficient, return them directly
+        if (localPlaces.Count >= 5)
         {
             return localPlaces;
         }
 
-        // 2. Fetch external geocoding results
+        // 2. Fetch external geocoding results to supplement local places
         var geoResults = await _geocodingService.GeocodeAsync(query, cancellationToken);
         var newPlaces = new List<Place>();
+        var matchedExistingPlaces = new List<Place>();
 
         foreach (var g in geoResults)
         {
             var point = new NetTopologySuite.Geometries.Point(g.Longitude, g.Latitude) { SRID = 4326 };
 
             // Deduplicate: check if place already exists with matching name within ~100 meters
-            var exists = await _context.Places.AnyAsync(
-                p => p.Name.ToLower() == g.Name.ToLower() && p.Location.IsWithinDistance(point, 0.001), 
+            var existing = await _context.Places.FirstOrDefaultAsync(
+                p => EF.Functions.ILike(p.Name, g.Name) && p.Location.IsWithinDistance(point, 0.001), 
                 cancellationToken);
 
-            if (!exists)
+            if (existing == null)
             {
-                newPlaces.Add(new Place
+                var newPlace = new Place
                 {
                     Name = g.Name,
                     Description = g.Description,
                     Location = point
-                });
+                };
+                newPlaces.Add(newPlace);
+            }
+            else
+            {
+                matchedExistingPlaces.Add(existing);
             }
         }
 
@@ -65,7 +72,16 @@ public class PlaceService : IPlaceService
             await _context.SaveChangesAsync(cancellationToken);
         }
 
-        return newPlaces.Count > 0 ? newPlaces : localPlaces;
+        // Merge local, existing geocoded matches, and newly added places, deduplicated by Id
+        var combined = localPlaces
+            .Concat(matchedExistingPlaces)
+            .Concat(newPlaces)
+            .GroupBy(p => p.Id)
+            .Select(g => g.First())
+            .Take(10)
+            .ToList();
+
+        return combined;
     }
 
     public async Task<Place?> GetPlaceByIdAsync(string id, CancellationToken cancellationToken = default)

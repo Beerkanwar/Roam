@@ -9,6 +9,6 @@ public class PlaceConfiguration : IEntityTypeConfiguration<Place>
     public void Configure(EntityTypeBuilder<Place> builder)
     {
         builder.HasIndex(p => p.Location).HasMethod("gist");
-        builder.HasIndex(p => p.Name);
+        builder.HasIndex(p => p.Name).HasMethod("gin").HasOperators("gin_trgm_ops");
     }
 }

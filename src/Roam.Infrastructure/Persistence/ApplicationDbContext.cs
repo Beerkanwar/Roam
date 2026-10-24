@@ -42,8 +42,9 @@ public class ApplicationDbContext : IdentityDbContext<ApplicationUser>
     {
         base.OnModelCreating(builder);
         
-        // PostGIS setup
+        // PostGIS & pg_trgm setup
         builder.HasPostgresExtension("postgis");
+        builder.HasPostgresExtension("pg_trgm");
         
         builder.ApplyConfigurationsFromAssembly(typeof(ApplicationDbContext).Assembly);
     }

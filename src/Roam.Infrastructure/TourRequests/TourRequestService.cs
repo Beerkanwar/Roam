@@ -430,15 +430,28 @@ public class TourRequestService : ITourRequestService
         if (radiusMeters <= 0 || radiusMeters > 50000)
             throw new ArgumentException("Radius must be between 1 and 50,000 meters.");
 
-        var volunteer = await _context.Users.FindAsync(new object[] { volunteerId }, cancellationToken);
+        var volunteer = await _context.Users
+            .Include(u => u.VolunteerSettings)
+            .FirstOrDefaultAsync(u => u.Id == volunteerId, cancellationToken);
+
         if (volunteer == null || volunteer.VolunteerStatus != VolunteerStatus.Approved)
             throw new UnauthorizedAccessException("Only approved volunteers can view nearby tour requests.");
+
+        // Enforce volunteer settings (M2)
+        if (volunteer.VolunteerSettings != null)
+        {
+            if (!volunteer.VolunteerSettings.Enabled || !volunteer.VolunteerSettings.AvailableForRequests)
+            {
+                return Array.Empty<TourRequest>();
+            }
+        }
 
         var userLocation = await _context.UserLocations
             .AsNoTracking()
             .FirstOrDefaultAsync(l => l.UserId == volunteerId, cancellationToken);
 
-        if (userLocation == null)
+        // Discard stale volunteer location (> 24 hours) (M16)
+        if (userLocation == null || userLocation.LastUpdatedAt < DateTime.UtcNow.AddHours(-24))
         {
             return Array.Empty<TourRequest>();
         }
@@ -449,26 +462,31 @@ public class TourRequestService : ITourRequestService
             .Select(b => b.BlockerId == volunteerId ? b.BlockedId : b.BlockerId)
             .ToListAsync(cancellationToken);
 
+        // Determine accepted visibility modes based on volunteer settings (M1, M2)
+        bool acceptsPrivate = volunteer.VolunteerSettings == null || volunteer.VolunteerSettings.AcceptsPrivateTours;
+        bool acceptsGroup = volunteer.VolunteerSettings == null || volunteer.VolunteerSettings.AcceptsGroupTours;
+
+        if (!acceptsPrivate && !acceptsGroup)
+        {
+            return Array.Empty<TourRequest>();
+        }
+
         // 1 degree latitude ~= 111,320 meters
         double latDegreeDelta = radiusMeters / 111320.0;
         double cosineLat = Math.Cos(userLocation.Location.Y * Math.PI / 180.0);
         double lngDegreeDelta = radiusMeters / (111320.0 * Math.Max(0.01, Math.Abs(cosineLat)));
+        double maxDegreeDistance = Math.Max(latDegreeDelta, lngDegreeDelta);
 
-        double minLat = userLocation.Location.Y - latDegreeDelta;
-        double maxLat = userLocation.Location.Y + latDegreeDelta;
-        double minLng = userLocation.Location.X - lngDegreeDelta;
-        double maxLng = userLocation.Location.X + lngDegreeDelta;
-
-        // Query with bounding box and visibility filter
+        // Spatial query using GiST index (ST_DWithin via IsWithinDistance) and pagination (M15)
         var candidates = await _context.TourRequests
             .Include(r => r.Place)
             .Where(r => r.Status == TourRequestStatus.Published)
-            .Where(r => r.Visibility == VisibilityMode.Group || r.RequesterId == volunteerId)
             .Where(r => !blockedUserIds.Contains(r.RequesterId))
-            .Where(r => r.Place != null &&
-                        r.Place.Location.Y >= minLat && r.Place.Location.Y <= maxLat &&
-                        r.Place.Location.X >= minLng && r.Place.Location.X <= maxLng)
+            .Where(r => (acceptsPrivate && r.Visibility == VisibilityMode.Private) ||
+                        (acceptsGroup && r.Visibility == VisibilityMode.Group))
+            .Where(r => r.Place != null && r.Place.Location.IsWithinDistance(userLocation.Location, maxDegreeDistance))
             .AsNoTracking()
+            .Take(50)
             .ToListAsync(cancellationToken);
 
         // Accurate Haversine metric distance check

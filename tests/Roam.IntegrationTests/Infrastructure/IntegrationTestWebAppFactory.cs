@@ -30,7 +30,6 @@ public class IntegrationTestWebAppFactory : WebApplicationFactory<Program>, IAsy
             services.AddDbContext<ApplicationDbContext>(options =>
             {
                 options.UseNpgsql(_dbContainer.GetConnectionString(), x => x.UseNetTopologySuite());
-                options.ConfigureWarnings(w => w.Ignore(Microsoft.EntityFrameworkCore.Diagnostics.RelationalEventId.PendingModelChangesWarning));
             });
         });
     }
