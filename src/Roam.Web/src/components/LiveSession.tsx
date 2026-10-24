@@ -29,13 +29,14 @@ const LiveSession: React.FC<LiveSessionProps> = ({ sessionId, token, targetUserI
 
     // Media controls state
     const [isAudioMuted, setIsAudioMuted] = useState(false);
-    const [isVideoMuted, setIsVideoMuted] = useState(false);
+    const [isVideoMuted, setIsVideoMuted] = useState(true);
 
     // WebRTC refs
     const peerConnection = useRef<RTCPeerConnection | null>(null);
     const localVideoRef = useRef<HTMLVideoElement>(null);
     const remoteVideoRef = useRef<HTMLVideoElement>(null);
     const localStreamRef = useRef<MediaStream | null>(null);
+    const pendingIceCandidates = useRef<RTCIceCandidate[]>([]);
 
     const log = (msg: string) => setLogs(prev => [...prev, msg]);
 
@@ -49,11 +50,9 @@ const LiveSession: React.FC<LiveSessionProps> = ({ sessionId, token, targetUserI
 
         const setup = async () => {
             try {
-                // 1. Fetch ICE Servers (TURN credentials)
+                // 1. Fetch ICE Servers (TURN credentials) - no third-party fallback per privacy requirements
                 const headers: HeadersInit = authToken ? { 'Authorization': `Bearer ${authToken}` } : {};
-                let iceServers: RTCIceServer[] = [
-                    { urls: ['stun:stun.l.google.com:19302', 'stun:stun1.l.google.com:19302'] }
-                ];
+                let iceServers: RTCIceServer[] = [];
                 try {
                     const turnResponse = await fetch(`${API_BASE}/api/v1/ice-servers`, { headers });
                     if (turnResponse.ok) {
@@ -63,10 +62,10 @@ const LiveSession: React.FC<LiveSessionProps> = ({ sessionId, token, targetUserI
                             iceServers = retrieved;
                         }
                     } else {
-                        log(`Using fallback STUN servers (ICE endpoint status: ${turnResponse.status})`);
+                        log(`ICE endpoint status: ${turnResponse.status}`);
                     }
                 } catch (iceErr) {
-                    log(`Failed to fetch ICE credentials (${iceErr}), using default STUN`);
+                    log(`Failed to fetch ICE credentials (${iceErr})`);
                 }
                 
                 if (!isMounted) return;
@@ -90,13 +89,17 @@ const LiveSession: React.FC<LiveSessionProps> = ({ sessionId, token, targetUserI
                     }
                 };
 
-                // Get local camera
+                // Get local camera - camera off/muted by default per privacy requirements
                 try {
                     const stream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
                     localStreamRef.current = stream;
                     if (localVideoRef.current) {
                         localVideoRef.current.srcObject = stream;
                     }
+                    stream.getVideoTracks().forEach(track => {
+                        track.enabled = false;
+                    });
+                    setIsVideoMuted(true);
                     stream.getTracks().forEach(track => peerConnection.current?.addTrack(track, stream));
                 } catch {
                     log('Could not get local camera access. You will be view-only.');
@@ -123,6 +126,15 @@ const LiveSession: React.FC<LiveSessionProps> = ({ sessionId, token, targetUserI
                     try {
                         const offer = JSON.parse(sdp);
                         await peerConnection.current?.setRemoteDescription(new RTCSessionDescription(offer));
+                        
+                        // Flush any pending buffered ICE candidates
+                        while (pendingIceCandidates.current.length > 0) {
+                            const pendingCandidate = pendingIceCandidates.current.shift();
+                            if (pendingCandidate) {
+                                await peerConnection.current?.addIceCandidate(pendingCandidate);
+                            }
+                        }
+
                         const answer = await peerConnection.current?.createAnswer();
                         await peerConnection.current?.setLocalDescription(answer);
                         
@@ -139,6 +151,14 @@ const LiveSession: React.FC<LiveSessionProps> = ({ sessionId, token, targetUserI
                     try {
                         const answer = JSON.parse(sdp);
                         await peerConnection.current?.setRemoteDescription(new RTCSessionDescription(answer));
+
+                        // Flush any pending buffered ICE candidates
+                        while (pendingIceCandidates.current.length > 0) {
+                            const pendingCandidate = pendingIceCandidates.current.shift();
+                            if (pendingCandidate) {
+                                await peerConnection.current?.addIceCandidate(pendingCandidate);
+                            }
+                        }
                     } catch (e) {
                         log(`Error handling answer: ${e}`);
                     }
@@ -146,8 +166,13 @@ const LiveSession: React.FC<LiveSessionProps> = ({ sessionId, token, targetUserI
 
                 tConnection.on('ReceiveIceCandidate', async (_senderId: string, candidateJson: string) => {
                     try {
-                        const candidate = JSON.parse(candidateJson);
-                        await peerConnection.current?.addIceCandidate(new RTCIceCandidate(candidate));
+                        const candidateData = JSON.parse(candidateJson);
+                        const candidate = new RTCIceCandidate(candidateData);
+                        if (!peerConnection.current || !peerConnection.current.remoteDescription || !peerConnection.current.remoteDescription.type) {
+                            pendingIceCandidates.current.push(candidate);
+                        } else {
+                            await peerConnection.current.addIceCandidate(candidate);
+                        }
                     } catch (e) {
                         log(`Error handling ICE candidate: ${e}`);
                     }
@@ -200,7 +225,7 @@ const LiveSession: React.FC<LiveSessionProps> = ({ sessionId, token, targetUserI
             await peerConnection.current?.setLocalDescription(offer);
             
             if (tourConnection?.state === signalR.HubConnectionState.Connected) {
-                await tourConnection.invoke('SendOffer', sessionId, JSON.stringify(offer));
+                await tourConnection.invoke('SendOffer', sessionId, JSON.stringify(offer), null);
                 log('Sent WebRTC Offer');
             }
         } catch (e) {

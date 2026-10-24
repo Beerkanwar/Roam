@@ -13,10 +13,7 @@ namespace Roam.Api.Hubs;
 
 public class SignalRSecurityFilter : IHubFilter
 {
-    private static readonly ConcurrentDictionary<string, (int Count, long WindowStart)> RateLimits = new();
-    private const int MaxCallsPerWindow = 60; // 60 calls per minute
-    private const long WindowTicks = 60 * TimeSpan.TicksPerSecond;
-
+    private const int MaxCallsPerWindow = 180; // 180 calls per minute (accommodates WebRTC ICE bursts)
     private readonly IServiceProvider _serviceProvider;
     private readonly IMemoryCache _cache;
 
@@ -26,28 +23,40 @@ public class SignalRSecurityFilter : IHubFilter
         _cache = cache;
     }
 
+    public async Task OnConnectedAsync(HubLifetimeContext context, Func<HubLifetimeContext, Task> next)
+    {
+        var userId = context.Context.User?.FindFirstValue(ClaimTypes.NameIdentifier);
+        if (!string.IsNullOrEmpty(userId))
+        {
+            var status = await GetAccountStatusAsync(userId);
+            if (IsDeactivated(status))
+            {
+                context.Context.Abort();
+                throw new HubException("Your account has been deactivated or suspended.");
+            }
+        }
+
+        await next(context);
+    }
+
     public async ValueTask<object?> InvokeMethodAsync(
         HubInvocationContext invocationContext, 
         Func<HubInvocationContext, ValueTask<object?>> next)
     {
         var userId = invocationContext.Context.User?.FindFirstValue(ClaimTypes.NameIdentifier);
 
-        // 1. Invocations rate limiting per connection / user
-        var rateKey = userId ?? invocationContext.Context.ConnectionId;
-        var nowTicks = DateTime.UtcNow.Ticks;
+        // 1. Invocations rate limiting per connection / user with automatic IMemoryCache eviction
+        var rateKey = $"hub_rate_{userId ?? invocationContext.Context.ConnectionId}";
+        var callCount = _cache.GetOrCreate(rateKey, entry =>
+        {
+            entry.AbsoluteExpirationRelativeToNow = TimeSpan.FromMinutes(1);
+            return 0;
+        });
 
-        RateLimits.AddOrUpdate(rateKey, 
-            _ => (1, nowTicks), 
-            (_, existing) =>
-            {
-                if (nowTicks - existing.WindowStart > WindowTicks)
-                {
-                    return (1, nowTicks);
-                }
-                return (existing.Count + 1, existing.WindowStart);
-            });
+        callCount++;
+        _cache.Set(rateKey, callCount, TimeSpan.FromMinutes(1));
 
-        if (RateLimits.TryGetValue(rateKey, out var current) && current.Count > MaxCallsPerWindow)
+        if (callCount > MaxCallsPerWindow)
         {
             throw new HubException("Too many requests. Please slow down.");
         }
@@ -55,23 +64,8 @@ public class SignalRSecurityFilter : IHubFilter
         // 2. Real-time active account status verification
         if (!string.IsNullOrEmpty(userId))
         {
-            var cacheKey = $"account_status_{userId}";
-            if (!_cache.TryGetValue(cacheKey, out AccountStatus? accountStatus))
-            {
-                using var scope = _serviceProvider.CreateScope();
-                var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
-                accountStatus = await dbContext.Users
-                    .Where(u => u.Id == userId)
-                    .Select(u => (AccountStatus?)u.AccountStatus)
-                    .FirstOrDefaultAsync();
-
-                _cache.Set(cacheKey, accountStatus, TimeSpan.FromSeconds(15));
-            }
-
-            if (accountStatus == AccountStatus.Suspended || 
-                accountStatus == AccountStatus.Banned ||
-                accountStatus == AccountStatus.PendingDeletion ||
-                accountStatus == AccountStatus.Deleted)
+            var accountStatus = await GetAccountStatusAsync(userId);
+            if (IsDeactivated(accountStatus))
             {
                 invocationContext.Context.Abort();
                 throw new HubException("Your account has been deactivated or suspended.");
@@ -79,5 +73,31 @@ public class SignalRSecurityFilter : IHubFilter
         }
 
         return await next(invocationContext);
+    }
+
+    private async Task<AccountStatus?> GetAccountStatusAsync(string userId)
+    {
+        var cacheKey = $"account_status_{userId}";
+        if (!_cache.TryGetValue(cacheKey, out AccountStatus? accountStatus))
+        {
+            using var scope = _serviceProvider.CreateScope();
+            var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+            accountStatus = await dbContext.Users
+                .Where(u => u.Id == userId)
+                .Select(u => (AccountStatus?)u.AccountStatus)
+                .FirstOrDefaultAsync();
+
+            _cache.Set(cacheKey, accountStatus, TimeSpan.FromSeconds(15));
+        }
+
+        return accountStatus;
+    }
+
+    private static bool IsDeactivated(AccountStatus? status)
+    {
+        return status == AccountStatus.Suspended || 
+               status == AccountStatus.Banned ||
+               status == AccountStatus.PendingDeletion ||
+               status == AccountStatus.Deleted;
     }
 }

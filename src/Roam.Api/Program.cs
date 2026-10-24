@@ -4,6 +4,7 @@ using Asp.Versioning;
 using Microsoft.AspNetCore.DataProtection;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.RateLimiting;
+using Microsoft.AspNetCore.SignalR;
 using Microsoft.EntityFrameworkCore;
 using Roam.Api.Endpoints;
 using Roam.Api.Hubs;
@@ -127,9 +128,18 @@ builder.Services.AddScoped<Roam.Application.Sessions.ITurnService, Roam.Infrastr
 // Add In-Memory Cache
 builder.Services.AddMemoryCache();
 
-// Add SignalR with Security Filter
-builder.Services.AddSignalR();
-builder.Services.AddSingleton<Microsoft.AspNetCore.SignalR.IHubFilter, SignalRSecurityFilter>();
+// Add SignalR with Security Filter and optional Redis backplane
+var redisConn = builder.Configuration.GetConnectionString("Redis");
+var signalRBuilder = builder.Services.AddSignalR(options =>
+{
+    options.AddFilter<SignalRSecurityFilter>();
+});
+
+if (!string.IsNullOrWhiteSpace(redisConn))
+{
+    signalRBuilder.AddStackExchangeRedis(redisConn);
+}
+builder.Services.AddSingleton<SignalRSecurityFilter>();
 
 // Add Health Checks
 builder.Services.AddHealthChecks()
@@ -174,6 +184,18 @@ app.UseExceptionHandler();
 app.UseStatusCodePages();
 
 app.UseCors();
+
+// SignalR access_token query string authentication support
+app.Use(async (context, next) =>
+{
+    var accessToken = context.Request.Query["access_token"];
+    var path = context.Request.Path;
+    if (!string.IsNullOrEmpty(accessToken) && path.StartsWithSegments("/hubs"))
+    {
+        context.Request.Headers.Append("Authorization", $"Bearer {accessToken}");
+    }
+    await next();
+});
 
 app.UseAuthentication();
 app.UseRateLimiter();

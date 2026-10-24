@@ -65,19 +65,22 @@ public class ChatService : IChatService
             throw new UnauthorizedAccessException("User is not a participant in this session.");
         }
 
-        // 2. Check if sender is blocked by or has blocked the session counterpart
-        var counterpartId = session.HostVolunteerId == senderId
-            ? session.Participants.FirstOrDefault(p => p.UserId != senderId)?.UserId
-            : session.HostVolunteerId;
+        // 2. Check if sender is blocked by or has blocked any other session participant
+        var otherParticipantIds = session.Participants
+            .Select(p => p.UserId)
+            .Append(session.HostVolunteerId)
+            .Where(id => id != senderId)
+            .Distinct()
+            .ToList();
 
-        if (!string.IsNullOrEmpty(counterpartId))
+        if (otherParticipantIds.Count > 0)
         {
             var isBlocked = await _context.UserBlocks.AnyAsync(b =>
-                (b.BlockerId == senderId && b.BlockedId == counterpartId) ||
-                (b.BlockerId == counterpartId && b.BlockedId == senderId), cancellationToken);
+                (b.BlockerId == senderId && otherParticipantIds.Contains(b.BlockedId)) ||
+                (otherParticipantIds.Contains(b.BlockerId) && b.BlockedId == senderId), cancellationToken);
 
             if (isBlocked)
-                throw new InvalidOperationException("Cannot send messages to a blocked user.");
+                throw new InvalidOperationException("Cannot send messages in a session containing blocked users.");
         }
 
         var message = new ChatMessage
@@ -122,8 +125,18 @@ public class ChatService : IChatService
 
         var pageLimit = Math.Clamp(limit, 1, 100);
 
+        var blockedUserIds = await _context.UserBlocks
+            .Where(b => b.BlockerId == userId || b.BlockedId == userId)
+            .Select(b => b.BlockerId == userId ? b.BlockedId : b.BlockerId)
+            .ToListAsync(cancellationToken);
+
         var query = _context.ChatMessages
             .Where(m => m.SessionId == sessionId);
+
+        if (blockedUserIds.Count > 0)
+        {
+            query = query.Where(m => !blockedUserIds.Contains(m.SenderId));
+        }
 
         if (before.HasValue)
         {
