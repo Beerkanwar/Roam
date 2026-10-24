@@ -42,7 +42,7 @@ public class TourRequest
                                        (Mode == SchedulingMode.Instant && (Status == TourRequestStatus.Accepted || Status == TourRequestStatus.Confirmed)),
             TourRequestStatus.Completed => Status == TourRequestStatus.Active,
             TourRequestStatus.Cancelled => Status != TourRequestStatus.Completed && Status != TourRequestStatus.Active && Status != TourRequestStatus.Cancelled,
-            TourRequestStatus.Expired => Status == TourRequestStatus.Published || Status == TourRequestStatus.Matching,
+            TourRequestStatus.Expired => Status == TourRequestStatus.Published || Status == TourRequestStatus.Matching || Status == TourRequestStatus.VolunteerInterested,
             _ => false
         };
 

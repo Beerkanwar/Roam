@@ -30,6 +30,9 @@ public class TourRequestStateMachineTests
     [InlineData(TourRequestStatus.Accepted, TourRequestStatus.Confirmed)]
     [InlineData(TourRequestStatus.Confirmed, TourRequestStatus.Active)]
     [InlineData(TourRequestStatus.Active, TourRequestStatus.Completed)]
+    [InlineData(TourRequestStatus.Published, TourRequestStatus.Expired)]
+    [InlineData(TourRequestStatus.Matching, TourRequestStatus.Expired)]
+    [InlineData(TourRequestStatus.VolunteerInterested, TourRequestStatus.Expired)]
     public void ValidTransitions_ShouldSucceed(TourRequestStatus current, TourRequestStatus target)
     {
         var request = new TourRequest { Status = current };

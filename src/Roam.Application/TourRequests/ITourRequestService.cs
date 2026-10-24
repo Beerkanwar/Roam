@@ -51,5 +51,5 @@ public interface ITourRequestService
     Task<bool> ExpireRequestAsync(string id, CancellationToken cancellationToken = default);
     Task<bool> MarkVolunteerInterestedAsync(string id, string volunteerId, CancellationToken cancellationToken = default);
     Task<bool> StartTourAsync(string id, string volunteerId, CancellationToken cancellationToken = default);
-    Task<bool> CompleteTourAsync(string id, string volunteerId, CancellationToken cancellationToken = default);
+    Task<bool> CompleteTourAsync(string id, string userId, CancellationToken cancellationToken = default);
 }

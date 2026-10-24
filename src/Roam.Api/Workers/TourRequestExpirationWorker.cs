@@ -42,25 +42,66 @@ public class TourRequestExpirationWorker : BackgroundService
                 if (expiredRequests.Count > 0)
                 {
                     var notificationService = scope.ServiceProvider.GetRequiredService<Roam.Application.TourRequests.ITourNotificationService>();
-                    foreach (var req in expiredRequests)
-                    {
-                        req.TransitionTo(TourRequestStatus.Expired);
-                    }
-                    await dbContext.SaveChangesAsync(stoppingToken);
+                    var successfullyExpired = new List<TourRequest>();
 
                     foreach (var req in expiredRequests)
                     {
                         try
                         {
-                            await notificationService.TourRequestExpiredAsync(req.Id, req.RequesterId);
+                            req.TransitionTo(TourRequestStatus.Expired);
+                            successfullyExpired.Add(req);
                         }
-                        catch (Exception notifyEx)
+                        catch (Exception ex)
                         {
-                            _logger.LogWarning(notifyEx, "Failed to send expiration notification for request {RequestId}", req.Id);
+                            _logger.LogError(ex, "Failed to transition tour request {RequestId} to Expired", req.Id);
                         }
                     }
 
-                    _logger.LogInformation("Expired {Count} stale tour requests.", expiredRequests.Count);
+                    if (successfullyExpired.Count > 0)
+                    {
+                        await dbContext.SaveChangesAsync(stoppingToken);
+
+                        foreach (var req in successfullyExpired)
+                        {
+                            try
+                            {
+                                await notificationService.TourRequestExpiredAsync(req.Id, req.RequesterId);
+                            }
+                            catch (Exception notifyEx)
+                            {
+                                _logger.LogWarning(notifyEx, "Failed to send expiration notification for request {RequestId}", req.Id);
+                            }
+                        }
+
+                        _logger.LogInformation("Expired {Count} stale tour requests.", successfullyExpired.Count);
+                    }
+                }
+
+                // Check for abandoned sessions exceeding max duration (4 hours)
+                var timeoutThreshold = now.AddHours(-4);
+                var staleSessions = await dbContext.TourSessions
+                    .Where(s => (s.Status == Roam.Domain.TourSessions.SessionStatus.Active || s.Status == Roam.Domain.TourSessions.SessionStatus.Starting)
+                                && s.StartedAt < timeoutThreshold)
+                    .Take(50)
+                    .ToListAsync(stoppingToken);
+
+                if (staleSessions.Count > 0)
+                {
+                    foreach (var session in staleSessions)
+                    {
+                        session.Status = Roam.Domain.TourSessions.SessionStatus.Completed;
+                        session.EndedAt = now;
+                        session.EndReason = "Session timed out after max duration";
+
+                        var tourReq = await dbContext.TourRequests.FindAsync(new object[] { session.TourRequestId }, stoppingToken);
+                        if (tourReq != null && tourReq.Status == TourRequestStatus.Active)
+                        {
+                            tourReq.Status = TourRequestStatus.Completed;
+                        }
+                    }
+
+                    await dbContext.SaveChangesAsync(stoppingToken);
+                    _logger.LogInformation("Timed out {Count} abandoned tour sessions.", staleSessions.Count);
                 }
             }
             catch (Exception ex)

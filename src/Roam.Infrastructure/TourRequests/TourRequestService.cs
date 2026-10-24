@@ -106,6 +106,8 @@ public class TourRequestService : ITourRequestService
         _context.TourRequests.Add(request);
         await _context.SaveChangesAsync(cancellationToken);
 
+        await _notificationService.TourRequestCreatedAsync(request.Id);
+
         return request;
     }
 
@@ -118,6 +120,9 @@ public class TourRequestService : ITourRequestService
 
         var request = await _context.TourRequests.FirstOrDefaultAsync(r => r.Id == id, cancellationToken);
         if (request == null) return false;
+
+        if (request.RequesterId == volunteerId)
+            throw new InvalidOperationException("Volunteers cannot accept their own tour requests.");
 
         // 2. Concurrency & state preconditions
         if (request.Status != TourRequestStatus.Published && request.Status != TourRequestStatus.VolunteerInterested)
@@ -288,6 +293,19 @@ public class TourRequestService : ITourRequestService
         var request = await _context.TourRequests.FindAsync(new object[] { id }, cancellationToken);
         if (request == null) return false;
 
+        if (request.RequesterId == volunteerId)
+            throw new InvalidOperationException("Volunteers cannot express interest in their own tour requests.");
+
+        var isBlocked = await _context.UserBlocks.AnyAsync(b =>
+            (b.BlockerId == volunteerId && b.BlockedId == request.RequesterId) ||
+            (b.BlockerId == request.RequesterId && b.BlockedId == volunteerId), cancellationToken);
+
+        if (isBlocked)
+            throw new InvalidOperationException("Cannot express interest in a tour request from a blocked user.");
+
+        if (!string.IsNullOrEmpty(request.AssignedVolunteerId) && request.AssignedVolunteerId != volunteerId)
+            throw new InvalidOperationException("Request has already been claimed by another volunteer.");
+
         request.TransitionTo(TourRequestStatus.VolunteerInterested);
         request.AssignedVolunteerId = volunteerId;
         await _context.SaveChangesAsync(cancellationToken);
@@ -303,8 +321,18 @@ public class TourRequestService : ITourRequestService
         var request = await _context.TourRequests.FindAsync(new object[] { id }, cancellationToken);
         if (request == null) return false;
 
+        if (request.RequesterId == volunteerId)
+            throw new InvalidOperationException("Volunteers cannot start their own tour requests.");
+
         if (request.AssignedVolunteerId != volunteerId)
             throw new UnauthorizedAccessException("Only the assigned volunteer can start this tour.");
+
+        var isBlocked = await _context.UserBlocks.AnyAsync(b =>
+            (b.BlockerId == volunteerId && b.BlockedId == request.RequesterId) ||
+            (b.BlockerId == request.RequesterId && b.BlockedId == volunteerId), cancellationToken);
+
+        if (isBlocked)
+            throw new InvalidOperationException("Cannot start a tour with a blocked user.");
 
         // Check if an active session already exists (idempotency)
         var existingActiveSession = await _context.TourSessions
@@ -314,25 +342,22 @@ public class TourRequestService : ITourRequestService
             return true;
         }
 
-        // Atomic transition from Accepted / Confirmed to Active
-        var rowsAffected = await _context.TourRequests
-            .Where(r => r.Id == id && 
-                        r.AssignedVolunteerId == volunteerId &&
-                        (r.Status == TourRequestStatus.Accepted || r.Status == TourRequestStatus.Confirmed))
-            .ExecuteUpdateAsync(s => s.SetProperty(r => r.Status, TourRequestStatus.Active), cancellationToken);
-
-        if (rowsAffected == 0)
+        // Enforce state machine rules: Scheduled tours must be Confirmed; Instant tours must be Accepted or Confirmed
+        if (request.Mode == SchedulingMode.Scheduled && request.Status != TourRequestStatus.Confirmed)
         {
-            var activeSession = await _context.TourSessions
-                .FirstOrDefaultAsync(s => s.TourRequestId == id && s.Status == SessionStatus.Active, cancellationToken);
-            if (activeSession != null)
-            {
-                return true;
-            }
+            throw new InvalidOperationException("Scheduled tour requests must have a confirmed schedule before starting.");
+        }
+
+        if (request.Mode == SchedulingMode.Instant && request.Status != TourRequestStatus.Accepted && request.Status != TourRequestStatus.Confirmed)
+        {
             throw new InvalidOperationException($"Cannot start tour request in status {request.Status}.");
         }
 
-        // Atomically create TourSession and participants
+        // Atomically transition state and create session inside a database transaction
+        using var transaction = await _context.Database.BeginTransactionAsync(cancellationToken);
+
+        request.TransitionTo(TourRequestStatus.Active);
+
         var session = new TourSession
         {
             Id = Guid.NewGuid().ToString(),
@@ -360,19 +385,20 @@ public class TourRequestService : ITourRequestService
 
         _context.TourSessions.Add(session);
         await _context.SaveChangesAsync(cancellationToken);
+        await transaction.CommitAsync(cancellationToken);
 
         await _notificationService.TourStartingAsync(session.Id, volunteerId, request.RequesterId);
 
         return true;
     }
 
-    public async Task<bool> CompleteTourAsync(string id, string volunteerId, CancellationToken cancellationToken = default)
+    public async Task<bool> CompleteTourAsync(string id, string userId, CancellationToken cancellationToken = default)
     {
         var request = await _context.TourRequests.FindAsync(new object[] { id }, cancellationToken);
         if (request == null) return false;
 
-        if (request.AssignedVolunteerId != volunteerId)
-            throw new UnauthorizedAccessException("Only the assigned volunteer can complete this tour.");
+        if (request.AssignedVolunteerId != userId && request.RequesterId != userId)
+            throw new UnauthorizedAccessException("Only the requester or assigned volunteer can complete this tour.");
 
         request.TransitionTo(TourRequestStatus.Completed);
 
@@ -385,12 +411,16 @@ public class TourRequestService : ITourRequestService
         {
             session.Status = SessionStatus.Completed;
             session.EndedAt = DateTime.UtcNow;
-            session.EndReason = "Completed by volunteer";
+            session.EndReason = request.RequesterId == userId ? "Completed by requester" : "Completed by volunteer";
         }
         
         await _context.SaveChangesAsync(cancellationToken);
 
-        await _notificationService.TourEndedAsync(session?.Id ?? id, volunteerId, request.RequesterId);
+        var counterpartId = request.RequesterId == userId ? request.AssignedVolunteerId : request.RequesterId;
+        if (!string.IsNullOrEmpty(counterpartId))
+        {
+            await _notificationService.TourEndedAsync(session?.Id ?? id, userId, counterpartId);
+        }
 
         return true;
     }
