@@ -19,6 +19,22 @@ public class CreateTourRequestByCoordinatesDto
     public VisibilityMode Visibility { get; set; }
     public SchedulingMode Mode { get; set; }
     public string Description { get; set; } = string.Empty;
+
+    public bool Validate(out string? errorMessage)
+    {
+        if (double.IsNaN(Latitude) || Latitude is < -90 or > 90)
+        {
+            errorMessage = "Latitude must be between -90 and 90.";
+            return false;
+        }
+        if (double.IsNaN(Longitude) || Longitude is < -180 or > 180)
+        {
+            errorMessage = "Longitude must be between -180 and 180.";
+            return false;
+        }
+        errorMessage = null;
+        return true;
+    }
 }
 
 public class TourRequestResponseDto

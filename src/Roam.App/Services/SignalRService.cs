@@ -19,7 +19,7 @@ public class SignalRService : IAsyncDisposable
     public static string GetDefaultBaseUrl()
     {
 #if ANDROID
-        return DeviceInfo.DeviceType == DeviceType.Virtual ? "http://10.0.2.2:5000" : "https://localhost:7217";
+        return DeviceInfo.DeviceType == DeviceType.Virtual ? "http://10.0.2.2:5147" : "https://localhost:7217";
 #else
         return "https://localhost:7217";
 #endif

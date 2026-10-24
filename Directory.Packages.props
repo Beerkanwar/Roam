@@ -25,8 +25,8 @@
     <!-- Domain dependencies -->
     <PackageVersion Include="NetTopologySuite" Version="2.5.0" />
     <!-- MAUI -->
-    <PackageVersion Include="Microsoft.Maui.Controls" Version="10.0.0-preview.1.25122.6" />
-    <PackageVersion Include="Microsoft.Extensions.Logging.Debug" Version="10.0.0-preview.1.25080.5" />
+    <PackageVersion Include="Microsoft.Maui.Controls" Version="10.0.12" />
+    <PackageVersion Include="Microsoft.Extensions.Logging.Debug" Version="10.0.12" />
     <!-- Tests -->
     <PackageVersion Include="coverlet.collector" Version="6.0.2" />
     <PackageVersion Include="Microsoft.NET.Test.Sdk" Version="17.11.1" />

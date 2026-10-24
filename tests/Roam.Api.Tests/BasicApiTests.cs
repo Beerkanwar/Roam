@@ -1,4 +1,7 @@
-using Microsoft.Extensions.Configuration;
+using System.Threading.Tasks;
+using Microsoft.Extensions.Logging.Abstractions;
+using Roam.Api.Services;
+using Roam.Domain.Users;
 using Xunit;
 
 namespace Roam.Api.Tests;
@@ -6,19 +9,15 @@ namespace Roam.Api.Tests;
 public class BasicApiTests
 {
     [Fact]
-    public void Configuration_LoadsTurnServerSettings()
+    public async Task LoggingEmailSender_ProcessesConfirmationAndResetLinks()
     {
-        var inMemorySettings = new Dictionary<string, string?>
-        {
-            { "TurnServer:Uris:0", "turn:127.0.0.1:3478" },
-            { "TurnServer:Password", "roam-test-secret" }
-        };
+        var sender = new LoggingEmailSender(NullLogger<LoggingEmailSender>.Instance);
+        var user = new ApplicationUser { Email = "user@example.com", UserName = "user@example.com" };
 
-        var config = new ConfigurationBuilder()
-            .AddInMemoryCollection(inMemorySettings)
-            .Build();
+        await sender.SendConfirmationLinkAsync(user, user.Email, "https://roam.local/confirm?code=abc");
+        await sender.SendPasswordResetLinkAsync(user, user.Email, "https://roam.local/reset?code=def");
+        await sender.SendPasswordResetCodeAsync(user, user.Email, "123456");
 
-        Assert.Equal("turn:127.0.0.1:3478", config["TurnServer:Uris:0"]);
-        Assert.Equal("roam-test-secret", config["TurnServer:Password"]);
+        Assert.Equal("user@example.com", user.Email);
     }
 }

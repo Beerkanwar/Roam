@@ -16,6 +16,7 @@ const API_BASE = import.meta.env.VITE_API_BASE_URL || 'https://localhost:7217';
 
 function App() {
   const [token, setToken] = useState<string>(() => localStorage.getItem('roam_token') || '');
+  const [refreshToken, setRefreshToken] = useState<string>(() => localStorage.getItem('roam_refresh_token') || '');
   const [authEmail, setAuthEmail] = useState('');
   const [authPassword, setAuthPassword] = useState('');
   const [isRegistering, setIsRegistering] = useState(false);
@@ -36,6 +37,73 @@ function App() {
       localStorage.removeItem('roam_token');
     }
   }, [token]);
+
+  useEffect(() => {
+    if (refreshToken) {
+      localStorage.setItem('roam_refresh_token', refreshToken);
+    } else {
+      localStorage.removeItem('roam_refresh_token');
+    }
+  }, [refreshToken]);
+
+  const handleLogout = useCallback(() => {
+    setToken('');
+    setRefreshToken('');
+    localStorage.removeItem('roam_token');
+    localStorage.removeItem('roam_refresh_token');
+    setActiveSessionId(null);
+  }, []);
+
+  const refreshAuthToken = useCallback(async (): Promise<string | null> => {
+    const currentRefresh = refreshToken || localStorage.getItem('roam_refresh_token');
+    if (!currentRefresh) {
+      handleLogout();
+      return null;
+    }
+    try {
+      const response = await fetch(`${API_BASE}/refresh`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ refreshToken: currentRefresh })
+      });
+      if (response.ok) {
+        const data = await response.json();
+        const newToken = data.accessToken || data.token;
+        const newRefresh = data.refreshToken;
+        if (newToken) {
+          setToken(newToken);
+          localStorage.setItem('roam_token', newToken);
+        }
+        if (newRefresh) {
+          setRefreshToken(newRefresh);
+          localStorage.setItem('roam_refresh_token', newRefresh);
+        }
+        return newToken || null;
+      } else {
+        handleLogout();
+        return null;
+      }
+    } catch {
+      handleLogout();
+      return null;
+    }
+  }, [refreshToken, handleLogout]);
+
+  const authFetch = useCallback(async (url: string, options: RequestInit = {}): Promise<Response> => {
+    const headers = new Headers(options.headers || {});
+    if (token) {
+      headers.set('Authorization', `Bearer ${token}`);
+    }
+    let response = await fetch(url, { ...options, headers });
+    if (response.status === 401 && (refreshToken || localStorage.getItem('roam_refresh_token'))) {
+      const newToken = await refreshAuthToken();
+      if (newToken) {
+        headers.set('Authorization', `Bearer ${newToken}`);
+        response = await fetch(url, { ...options, headers });
+      }
+    }
+    return response;
+  }, [token, refreshToken, refreshAuthToken]);
 
   useEffect(() => {
     if (!token) return;
@@ -93,6 +161,9 @@ function App() {
           } else if (data.token) {
             setToken(data.token);
           }
+          if (data.refreshToken) {
+            setRefreshToken(data.refreshToken);
+          }
         }
       } else {
         const errorText = await response.text();
@@ -103,24 +174,13 @@ function App() {
     }
   };
 
-  const handleLogout = () => {
-    setToken('');
-    setActiveSessionId(null);
-  };
-
-  const getAuthHeaders = (): HeadersInit => {
-    return token ? { 'Authorization': `Bearer ${token}` } : {};
-  };
-
   const handleSearch = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!searchQuery.trim()) return;
 
     setLoading(true);
     try {
-      const response = await fetch(`${API_BASE}/api/v1/places/search?q=${encodeURIComponent(searchQuery)}`, {
-        headers: getAuthHeaders()
-      });
+      const response = await authFetch(`${API_BASE}/api/v1/places/search?q=${encodeURIComponent(searchQuery)}`);
       if (response.ok) {
         const data = await response.json();
         setPlaces(data);
@@ -137,11 +197,10 @@ function App() {
 
   const handleRequestTourById = async (placeId: string) => {
     try {
-      const response = await fetch(`${API_BASE}/api/v1/tour-requests`, {
+      const response = await authFetch(`${API_BASE}/api/v1/tour-requests`, {
         method: 'POST',
         headers: {
-          'Content-Type': 'application/json',
-          ...getAuthHeaders()
+          'Content-Type': 'application/json'
         },
         body: JSON.stringify({
           placeId: placeId,
@@ -169,11 +228,10 @@ function App() {
   const handleRequestTourByCoords = async () => {
     if (!selectedCoords) return;
     try {
-      const response = await fetch(`${API_BASE}/api/v1/tour-requests/coordinates`, {
+      const response = await authFetch(`${API_BASE}/api/v1/tour-requests/coordinates`, {
         method: 'POST',
         headers: {
-          'Content-Type': 'application/json',
-          ...getAuthHeaders()
+          'Content-Type': 'application/json'
         },
         body: JSON.stringify({
           latitude: selectedCoords.lat,

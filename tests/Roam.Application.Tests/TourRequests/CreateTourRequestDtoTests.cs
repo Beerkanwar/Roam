@@ -38,11 +38,13 @@ public class CreateTourRequestDtoTests
             Description = "Test coordinates"
         };
 
-        bool isValid = !double.IsNaN(dto.Latitude) && !double.IsNaN(dto.Longitude)
-            && dto.Latitude >= -90 && dto.Latitude <= 90
-            && dto.Longitude >= -180 && dto.Longitude <= 180;
+        bool isValid = dto.Validate(out var error);
 
         Assert.Equal(expectedValid, isValid);
+        if (!expectedValid)
+        {
+            Assert.NotNull(error);
+        }
     }
 
     [Fact]

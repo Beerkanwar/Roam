@@ -57,11 +57,8 @@ public class TourRequestService : ITourRequestService
 
     public async Task<TourRequest> CreateRequestByCoordinatesAsync(CreateTourRequestByCoordinatesDto dto, CancellationToken cancellationToken = default)
     {
-        if (dto.Latitude is < -90 or > 90)
-            throw new ArgumentException("Latitude must be between -90 and 90.", nameof(dto.Latitude));
-
-        if (dto.Longitude is < -180 or > 180)
-            throw new ArgumentException("Longitude must be between -180 and 180.", nameof(dto.Longitude));
+        if (!dto.Validate(out var validationError))
+            throw new ArgumentException(validationError, nameof(dto));
 
         var location = new NetTopologySuite.Geometries.Point(dto.Longitude, dto.Latitude) { SRID = 4326 };
 
