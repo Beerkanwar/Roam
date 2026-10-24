@@ -30,40 +30,30 @@ public static class DatabaseSeeder
             var adminUser = await userManager.FindByEmailAsync(adminEmail);
             if (adminUser == null)
             {
-                adminUser = new ApplicationUser
+                if (!string.IsNullOrWhiteSpace(adminPassword) && adminPassword.Length >= 8)
                 {
-                    UserName = adminEmail,
-                    Email = adminEmail,
-                    EmailConfirmed = true,
-                    DisplayName = "System Administrator",
-                    AccountStatus = AccountStatus.Active,
-                    VolunteerStatus = VolunteerStatus.Approved
-                };
+                    adminUser = new ApplicationUser
+                    {
+                        UserName = adminEmail,
+                        Email = adminEmail,
+                        EmailConfirmed = true,
+                        DisplayName = "System Administrator",
+                        AccountStatus = AccountStatus.Active,
+                        VolunteerStatus = VolunteerStatus.Approved,
+                        AgeCategory = AgeCategory.Adult
+                    };
 
-                var createResult = string.IsNullOrWhiteSpace(adminPassword)
-                    ? await userManager.CreateAsync(adminUser)
-                    : await userManager.CreateAsync(adminUser, adminPassword);
-
-                if (createResult.Succeeded)
-                {
-                    await userManager.AddToRoleAsync(adminUser, "Admin");
+                    var createResult = await userManager.CreateAsync(adminUser, adminPassword);
+                    if (createResult.Succeeded)
+                    {
+                        await userManager.AddToRoleAsync(adminUser, "Admin");
+                    }
                 }
             }
-            else
-            {
-                if (!await userManager.IsInRoleAsync(adminUser, "Admin"))
-                {
-                    await userManager.AddToRoleAsync(adminUser, "Admin");
-                }
-                if (adminUser.VolunteerStatus != VolunteerStatus.Approved)
-                {
-                    adminUser.VolunteerStatus = VolunteerStatus.Approved;
-                    await userManager.UpdateAsync(adminUser);
-                }
-            }
+            // Safeguard C2: Never auto-promote pre-existing accounts to Admin at restart
         }
 
-        // 3. Auto-approve specified volunteer emails if provided
+        // 3. Auto-approve specified volunteer emails only if already email-confirmed
         var volunteerEmailsRaw = configuration["Bootstrap:VolunteerEmails"] ?? configuration["BOOTSTRAP_VOLUNTEER_EMAILS"];
         if (!string.IsNullOrWhiteSpace(volunteerEmailsRaw))
         {
@@ -71,7 +61,8 @@ public static class DatabaseSeeder
             foreach (var email in emails)
             {
                 var volUser = await userManager.FindByEmailAsync(email);
-                if (volUser != null && volUser.VolunteerStatus != VolunteerStatus.Approved)
+                // Safeguard C2: Only approve volunteer status if the user's email has already been verified
+                if (volUser != null && volUser.EmailConfirmed && volUser.VolunteerStatus != VolunteerStatus.Approved)
                 {
                     volUser.VolunteerStatus = VolunteerStatus.Approved;
                     await userManager.UpdateAsync(volUser);

@@ -69,6 +69,11 @@ public static class UserProfileEndpoints
             var appUser = await context.Users.FirstOrDefaultAsync(u => u.Id == userId, cancellationToken);
             if (appUser == null) return Results.NotFound();
 
+            if (appUser.DateOfBirth.HasValue && appUser.DateOfBirth.Value != dto.DateOfBirth)
+            {
+                return Results.BadRequest(new { error = "Date of birth cannot be modified once verified." });
+            }
+
             appUser.DisplayName = dto.DisplayName.Trim();
             appUser.Country = dto.Country.Trim();
             appUser.DateOfBirth = dto.DateOfBirth;
@@ -162,7 +167,7 @@ public static class UserProfileEndpoints
         })
         .RequireAuthorization();
 
-        // GDPR Data Subject: Export My Data
+        // GDPR Data Subject: Export My Data (M9: includes chat, reports, tips, location, blocks)
         group.MapGet("/me/export", async (ClaimsPrincipal user, ApplicationDbContext context, CancellationToken cancellationToken) =>
         {
             var userId = user.FindFirstValue(ClaimTypes.NameIdentifier);
@@ -185,6 +190,33 @@ public static class UserProfileEndpoints
                 .AsNoTracking()
                 .ToListAsync(cancellationToken);
 
+            var chatMessages = await context.ChatMessages
+                .Where(m => m.SenderId == userId)
+                .AsNoTracking()
+                .ToListAsync(cancellationToken);
+
+            var reports = await context.Reports
+                .Where(r => r.ReporterId == userId || r.ReportedUserId == userId)
+                .AsNoTracking()
+                .ToListAsync(cancellationToken);
+
+            var tips = await context.TipTransactions
+                .Where(t => t.SenderId == userId || t.ReceiverId == userId)
+                .AsNoTracking()
+                .ToListAsync(cancellationToken);
+
+            var userLoc = await context.UserLocations
+                .Where(l => l.UserId == userId)
+                .Select(l => new { Latitude = l.Location.Y, Longitude = l.Location.X, l.LastUpdatedAt })
+                .AsNoTracking()
+                .FirstOrDefaultAsync(cancellationToken);
+
+            var blocks = await context.UserBlocks
+                .Where(b => b.BlockerId == userId)
+                .Select(b => new { b.BlockedId, b.CreatedAt })
+                .AsNoTracking()
+                .ToListAsync(cancellationToken);
+
             var exportData = new
             {
                 Profile = new
@@ -194,26 +226,41 @@ public static class UserProfileEndpoints
                     appUser.DisplayName,
                     appUser.Country,
                     appUser.DateOfBirth,
+                    appUser.AgeCategory,
                     appUser.CreatedAt,
                     appUser.VolunteerStatus,
                     appUser.VolunteerSettings
                 },
                 TourRequests = tourRequests,
-                Feedbacks = feedbacks
+                Feedbacks = feedbacks,
+                ChatMessages = chatMessages,
+                Reports = reports,
+                Tips = tips,
+                Location = userLoc,
+                Blocks = blocks
             };
 
             return Results.Ok(exportData);
         })
         .RequireAuthorization();
 
-        // GDPR Data Subject: Delete / Anonymize Account
-        group.MapDelete("/me", async (ClaimsPrincipal user, ApplicationDbContext context, CancellationToken cancellationToken) =>
+        // GDPR Data Subject: Delete / Anonymize Account (M8: anonymize chat, requests, feedback, blocks)
+        group.MapDelete("/me", async (ClaimsPrincipal user, [FromBody] DeleteAccountDto? dto, UserManager<ApplicationUser> userManager, ApplicationDbContext context, CancellationToken cancellationToken) =>
         {
             var userId = user.FindFirstValue(ClaimTypes.NameIdentifier);
             if (string.IsNullOrEmpty(userId)) return Results.Unauthorized();
 
             var appUser = await context.Users.FirstOrDefaultAsync(u => u.Id == userId, cancellationToken);
             if (appUser == null) return Results.NotFound();
+
+            if (!string.IsNullOrEmpty(dto?.Password))
+            {
+                var isPasswordValid = await userManager.CheckPasswordAsync(appUser, dto.Password);
+                if (!isPasswordValid)
+                {
+                    return Results.BadRequest(new { error = "Invalid password for account deletion." });
+                }
+            }
 
             // Anonymize personal details
             appUser.DisplayName = "Deleted User";
@@ -228,6 +275,20 @@ public static class UserProfileEndpoints
             appUser.AccountStatus = AccountStatus.Deleted;
             appUser.SecurityStamp = Guid.NewGuid().ToString();
 
+            // Anonymize user content across chat and feedback
+            await context.ChatMessages
+                .Where(m => m.SenderId == userId)
+                .ExecuteUpdateAsync(s => s.SetProperty(m => m.Text, "[Message deleted due to account removal]"), cancellationToken);
+
+            await context.Feedbacks
+                .Where(f => f.ReviewerId == userId)
+                .ExecuteUpdateAsync(s => s.SetProperty(f => f.Comments, "[Feedback author deleted]"), cancellationToken);
+
+            await context.TourRequests
+                .Where(r => r.RequesterId == userId && (r.Status == Roam.Domain.TourRequests.TourRequestStatus.Draft || r.Status == Roam.Domain.TourRequests.TourRequestStatus.Published))
+                .ExecuteUpdateAsync(s => s.SetProperty(r => r.Status, Roam.Domain.TourRequests.TourRequestStatus.Cancelled)
+                                          .SetProperty(r => r.CancellationReason, "User account deleted"), cancellationToken);
+
             // Remove location record
             var userLoc = await context.UserLocations.FirstOrDefaultAsync(l => l.UserId == userId, cancellationToken);
             if (userLoc != null) context.UserLocations.Remove(userLoc);
@@ -235,6 +296,15 @@ public static class UserProfileEndpoints
             // Remove volunteer settings
             var volSettings = await context.VolunteerSettings.FirstOrDefaultAsync(v => v.UserId == userId, cancellationToken);
             if (volSettings != null) context.VolunteerSettings.Remove(volSettings);
+
+            // Remove blocks
+            var userBlocks = await context.UserBlocks
+                .Where(b => b.BlockerId == userId || b.BlockedId == userId)
+                .ToListAsync(cancellationToken);
+            if (userBlocks.Count > 0)
+            {
+                context.UserBlocks.RemoveRange(userBlocks);
+            }
 
             await context.SaveChangesAsync(cancellationToken);
             return Results.NoContent();
@@ -292,4 +362,9 @@ public class UpdateLocationDto
 {
     public double Latitude { get; set; }
     public double Longitude { get; set; }
+}
+
+public class DeleteAccountDto
+{
+    public string? Password { get; set; }
 }

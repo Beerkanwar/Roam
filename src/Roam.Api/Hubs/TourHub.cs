@@ -44,6 +44,10 @@ public class TourHub : Hub<ITourClient>
         if (session == null)
             throw new HubException("Tour session not found.");
 
+        var user = await _context.Users.AsNoTracking().FirstOrDefaultAsync(u => u.Id == userId);
+        if (user == null || user.AgeCategory != Domain.Users.AgeCategory.Adult)
+            throw new HubException("Only age-verified adult users (18+) may participate in tour sessions.");
+
         if (session.Status != SessionStatus.Active && session.Status != SessionStatus.Starting)
             throw new HubException("Tour session is not currently active.");
 

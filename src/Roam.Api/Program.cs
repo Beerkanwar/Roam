@@ -58,6 +58,9 @@ builder.Services.AddIdentityApiEndpoints<ApplicationUser>(options =>
 .AddEntityFrameworkStores<ApplicationDbContext>()
 .AddClaimsPrincipalFactory<Roam.Infrastructure.Identity.ApplicationUserClaimsPrincipalFactory>();
 
+// Identity Email Sender (M19)
+builder.Services.AddTransient<IEmailSender<ApplicationUser>, Roam.Api.Services.LoggingEmailSender>();
+
 // Data Protection Keys Persistence
 var keysFolder = Environment.GetEnvironmentVariable("DATA_PROTECTION_KEYS_PATH") 
     ?? (builder.Environment.IsProduction() ? "/app/keys" : Path.Combine(AppContext.BaseDirectory, "temp_keys"));

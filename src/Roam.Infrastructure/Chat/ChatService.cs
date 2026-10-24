@@ -22,6 +22,13 @@ public class ChatService : IChatService
 
     public async Task<bool> IsUserParticipantAsync(string sessionId, string userId, CancellationToken cancellationToken = default)
     {
+        var isAdult = await _context.Users
+            .Where(u => u.Id == userId)
+            .Select(u => u.AgeCategory == Domain.Users.AgeCategory.Adult)
+            .FirstOrDefaultAsync(cancellationToken);
+
+        if (!isAdult) return false;
+
         var session = await _context.TourSessions
             .AsNoTracking()
             .FirstOrDefaultAsync(s => s.Id == sessionId, cancellationToken);
@@ -46,6 +53,12 @@ public class ChatService : IChatService
         var trimmedText = text.Trim();
         if (trimmedText.Length > 2000)
             throw new ArgumentException("Message text cannot exceed 2000 characters.", nameof(text));
+
+        var senderUser = await _context.Users.FindAsync(new object[] { senderId }, cancellationToken);
+        if (senderUser == null || senderUser.AgeCategory != Domain.Users.AgeCategory.Adult)
+        {
+            throw new UnauthorizedAccessException("Only age-verified adult users (18+) may participate in chat.");
+        }
 
         // 1. Fetch session with status, host, and participants in a single query
         var session = await _context.TourSessions

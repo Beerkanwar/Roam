@@ -17,10 +17,16 @@ public static class TourRequestEndpoints
             .RequireAuthorization()
             .RequireRateLimiting("UserPolicy");
 
-        group.MapPost("/", async (ClaimsPrincipal user, [FromBody] CreateTourRequestDto dto, ITourRequestService service, CancellationToken cancellationToken) =>
+        group.MapPost("/", async (ClaimsPrincipal user, [FromBody] CreateTourRequestDto dto, ITourRequestService service, ApplicationDbContext context, CancellationToken cancellationToken) =>
         {
             var userId = user.FindFirstValue(ClaimTypes.NameIdentifier);
             if (string.IsNullOrEmpty(userId)) return Results.Unauthorized();
+
+            var appUser = await context.Users.AsNoTracking().FirstOrDefaultAsync(u => u.Id == userId, cancellationToken);
+            if (appUser == null || appUser.AgeCategory != Roam.Domain.Users.AgeCategory.Adult)
+            {
+                return Results.Problem("Only age-verified adult users (18+) can create tour requests.", statusCode: StatusCodes.Status403Forbidden);
+            }
 
             if (string.IsNullOrWhiteSpace(dto.Description) || dto.Description.Length > 2000)
                 return Results.BadRequest(new { error = "Description must be between 1 and 2000 characters." });
@@ -37,10 +43,16 @@ public static class TourRequestEndpoints
             }
         });
 
-        group.MapPost("/coordinates", async (ClaimsPrincipal user, [FromBody] CreateTourRequestByCoordinatesDto dto, ITourRequestService service, CancellationToken cancellationToken) =>
+        group.MapPost("/coordinates", async (ClaimsPrincipal user, [FromBody] CreateTourRequestByCoordinatesDto dto, ITourRequestService service, ApplicationDbContext context, CancellationToken cancellationToken) =>
         {
             var userId = user.FindFirstValue(ClaimTypes.NameIdentifier);
             if (string.IsNullOrEmpty(userId)) return Results.Unauthorized();
+
+            var appUser = await context.Users.AsNoTracking().FirstOrDefaultAsync(u => u.Id == userId, cancellationToken);
+            if (appUser == null || appUser.AgeCategory != Roam.Domain.Users.AgeCategory.Adult)
+            {
+                return Results.Problem("Only age-verified adult users (18+) can create tour requests.", statusCode: StatusCodes.Status403Forbidden);
+            }
 
             if (dto.Latitude is < -90 or > 90)
                 return Results.BadRequest(new { error = "Latitude must be between -90 and 90." });
@@ -147,6 +159,10 @@ public static class TourRequestEndpoints
                 });
 
                 return Results.Ok(response);
+            }
+            catch (UnauthorizedAccessException ex)
+            {
+                return Results.Problem(ex.Message, statusCode: StatusCodes.Status403Forbidden);
             }
             catch (ArgumentException ex)
             {
