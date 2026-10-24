@@ -1,0 +1,149 @@
+<?xml version="1.0" encoding="utf-8" ?>
+<ContentPage xmlns="http://schemas.microsoft.com/dotnet/2021/maui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2009/xaml"
+             xmlns:vm="clr-namespace:Roam.App.ViewModels"
+             x:Class="Roam.App.Views.CreateRequestPage"
+             x:DataType="vm:CreateRequestViewModel"
+             Title="{Binding Title}"
+             BackgroundColor="#0B0F19">
+
+    <ScrollView>
+        <VerticalStackLayout Spacing="16" Padding="20">
+            <!-- Header Summary Card -->
+            <Border BackgroundColor="#0F172A"
+                    Stroke="#334155"
+                    StrokeThickness="1"
+                    StrokeShape="RoundRectangle 12"
+                    Padding="16">
+                <VerticalStackLayout Spacing="6">
+                    <Label Text="DESTINATION"
+                           FontSize="11"
+                           FontAttributes="Bold"
+                           TextColor="#6366F1" />
+                    <Label Text="{Binding PlaceName}"
+                           FontSize="20"
+                           FontAttributes="Bold"
+                           TextColor="#F8FAFC" />
+                    <Label Text="{Binding LocationFormatted}"
+                           FontSize="13"
+                           TextColor="#94A3B8" />
+                </VerticalStackLayout>
+            </Border>
+
+            <!-- Mode Selection: Instant vs Scheduled -->
+            <VerticalStackLayout Spacing="8">
+                <Label Text="Exploration Timing"
+                       FontSize="13"
+                       FontAttributes="Bold"
+                       TextColor="#CBD5E1" />
+                
+                <Grid ColumnDefinitions="*, *" ColumnSpacing="10">
+                    <Button Grid.Column="0"
+                            Text="⚡ Instant Live"
+                            Command="{Binding SelectInstantCommand}"
+                            BackgroundColor="#1E293B"
+                            TextColor="#F8FAFC"
+                            FontAttributes="Bold"
+                            CornerRadius="8"
+                            HeightRequest="44" />
+                    <Button Grid.Column="1"
+                            Text="📅 Scheduled"
+                            Command="{Binding SelectScheduledCommand}"
+                            BackgroundColor="#1E293B"
+                            TextColor="#94A3B8"
+                            FontAttributes="Bold"
+                            CornerRadius="8"
+                            HeightRequest="44" />
+                </Grid>
+            </VerticalStackLayout>
+
+            <!-- Visibility Selection: Private vs Group -->
+            <VerticalStackLayout Spacing="8">
+                <Label Text="Tour Privacy"
+                       FontSize="13"
+                       FontAttributes="Bold"
+                       TextColor="#CBD5E1" />
+
+                <Grid ColumnDefinitions="*, *" ColumnSpacing="10">
+                    <Button Grid.Column="0"
+                            Text="🔒 Private (1-on-1)"
+                            Command="{Binding SelectPrivateCommand}"
+                            BackgroundColor="#1E293B"
+                            TextColor="#F8FAFC"
+                            FontAttributes="Bold"
+                            CornerRadius="8"
+                            HeightRequest="44" />
+                    <Button Grid.Column="1"
+                            Text="👥 Public Group"
+                            Command="{Binding SelectGroupCommand}"
+                            BackgroundColor="#1E293B"
+                            TextColor="#94A3B8"
+                            FontAttributes="Bold"
+                            CornerRadius="8"
+                            HeightRequest="44" />
+                </Grid>
+            </VerticalStackLayout>
+
+            <!-- Request Description -->
+            <VerticalStackLayout Spacing="6">
+                <Grid ColumnDefinitions="*, Auto">
+                    <Label Grid.Column="0"
+                           Text="What would you like to see?"
+                           FontSize="13"
+                           FontAttributes="Bold"
+                           TextColor="#CBD5E1" />
+                    <Label Grid.Column="1"
+                           Text="{Binding CharCountText}"
+                           FontSize="12"
+                           TextColor="#64748B" />
+                </Grid>
+
+                <Border BackgroundColor="#1E293B"
+                        Stroke="#334155"
+                        StrokeThickness="1"
+                        StrokeShape="RoundRectangle 8"
+                        Padding="12">
+                    <Editor Placeholder="e.g. Please show the ancient cathedral entrance, architecture details, and the fountain in the square..."
+                            PlaceholderColor="#64748B"
+                            TextColor="#F8FAFC"
+                            Text="{Binding Description}"
+                            HeightRequest="120"
+                            AutoSize="Disabled" />
+                </Border>
+            </VerticalStackLayout>
+
+            <!-- Error Banner -->
+            <Label Text="{Binding ErrorMessage}"
+                   IsVisible="{Binding HasError}"
+                   TextColor="#F87171"
+                   FontSize="13"
+                   LineBreakMode="WordWrap" />
+
+            <!-- Submit Action Button -->
+            <Button Text="Broadcast Tour Request"
+                    Command="{Binding SubmitRequestCommand}"
+                    IsEnabled="{Binding IsNotBusy}"
+                    BackgroundColor="#6366F1"
+                    TextColor="#FFFFFF"
+                    FontAttributes="Bold"
+                    CornerRadius="8"
+                    HeightRequest="48"
+                    Margin="0,8,0,0" />
+
+            <!-- Loading Indicator -->
+            <ActivityIndicator IsRunning="{Binding IsBusy}"
+                               IsVisible="{Binding IsBusy}"
+                               Color="#6366F1"
+                               HorizontalOptions="Center" />
+
+            <!-- Cancel Button -->
+            <Button Text="Cancel"
+                    Command="{Binding CancelCommand}"
+                    BackgroundColor="Transparent"
+                    TextColor="#94A3B8"
+                    CornerRadius="8"
+                    HeightRequest="40" />
+        </VerticalStackLayout>
+    </ScrollView>
+
+</ContentPage>

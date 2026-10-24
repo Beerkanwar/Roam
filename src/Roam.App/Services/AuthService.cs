@@ -186,6 +186,12 @@ public class AuthService : IAuthService
         await Task.CompletedTask;
     }
 
+    public async Task RefreshUserProfileAsync()
+    {
+        await FetchUserProfileAsync();
+        AuthStateChanged?.Invoke();
+    }
+
     private async Task FetchUserProfileAsync()
     {
         try

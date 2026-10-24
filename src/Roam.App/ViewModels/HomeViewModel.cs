@@ -68,19 +68,12 @@ public class HomeViewModel : BaseViewModel
 
         ExploreCommand = new Command(async () =>
         {
-            await Shell.Current.GoToAsync("///HomePage");
+            await Shell.Current.GoToAsync("///ExplorePage");
         });
 
         VolunteerDashboardCommand = new Command(async () =>
         {
-            if (!IsVolunteer)
-            {
-                await Shell.Current.DisplayAlertAsync("Volunteer Program", 
-                    "You must be an approved volunteer to access the dispatch dashboard. Apply from your profile.", "OK");
-                return;
-            }
-
-            await Shell.Current.DisplayAlertAsync("Volunteer Dashboard", "Opening volunteer dispatch...", "OK");
+            await Shell.Current.GoToAsync("///VolunteerDashboardPage");
         });
     }
 

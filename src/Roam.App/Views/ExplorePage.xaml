@@ -1,0 +1,245 @@
+<?xml version="1.0" encoding="utf-8" ?>
+<ContentPage xmlns="http://schemas.microsoft.com/dotnet/2021/maui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2009/xaml"
+             xmlns:vm="clr-namespace:Roam.App.ViewModels"
+             xmlns:models="clr-namespace:Roam.App.Models"
+             x:Class="Roam.App.Views.ExplorePage"
+             x:DataType="vm:ExploreViewModel"
+             Title="{Binding Title}"
+             BackgroundColor="#0B0F19">
+
+    <Grid RowDefinitions="Auto, *">
+        <!-- Top Search and Filter Bar -->
+        <Border Grid.Row="0"
+                BackgroundColor="#0F172A"
+                Stroke="#1E293B"
+                StrokeThickness="1"
+                Padding="16,14">
+            <VerticalStackLayout Spacing="12">
+                <Label Text="🌍 Discover Live Destinations"
+                       FontSize="18"
+                       FontAttributes="Bold"
+                       TextColor="#F8FAFC" />
+
+                <!-- Search Input Row -->
+                <Grid ColumnDefinitions="*, Auto" ColumnSpacing="8">
+                    <Border Grid.Column="0"
+                            BackgroundColor="#1E293B"
+                            Stroke="#334155"
+                            StrokeThickness="1"
+                            StrokeShape="RoundRectangle 8"
+                            Padding="12,0">
+                        <Entry Placeholder="Search cities, museums, landmarks..."
+                               PlaceholderColor="#64748B"
+                               TextColor="#F8FAFC"
+                               Text="{Binding SearchQuery}"
+                               ReturnType="Search"
+                               ReturnCommand="{Binding SearchCommand}"
+                               VerticalOptions="Center" />
+                    </Border>
+
+                    <Button Grid.Column="1"
+                            Text="Search"
+                            Command="{Binding SearchCommand}"
+                            BackgroundColor="#6366F1"
+                            TextColor="#FFFFFF"
+                            FontAttributes="Bold"
+                            CornerRadius="8"
+                            Padding="16,0"
+                            HeightRequest="44" />
+                </Grid>
+
+                <!-- Quick Discovery Chips -->
+                <ScrollView Orientation="Horizontal" HorizontalScrollBarVisibility="Never">
+                    <HorizontalStackLayout Spacing="8">
+                        <Button Text="🏛️ Landmarks"
+                                Command="{Binding QuickFilterCommand}"
+                                CommandParameter="Landmarks"
+                                BackgroundColor="#1E293B"
+                                TextColor="#94A3B8"
+                                FontSize="12"
+                                CornerRadius="16"
+                                HeightRequest="32"
+                                Padding="12,0" />
+                        <Button Text="🌳 Parks"
+                                Command="{Binding QuickFilterCommand}"
+                                CommandParameter="Parks"
+                                BackgroundColor="#1E293B"
+                                TextColor="#94A3B8"
+                                FontSize="12"
+                                CornerRadius="16"
+                                HeightRequest="32"
+                                Padding="12,0" />
+                        <Button Text="🎨 Museums"
+                                Command="{Binding QuickFilterCommand}"
+                                CommandParameter="Museum"
+                                BackgroundColor="#1E293B"
+                                TextColor="#94A3B8"
+                                FontSize="12"
+                                CornerRadius="16"
+                                HeightRequest="32"
+                                Padding="12,0" />
+                        <Button Text="🏖️ Beaches"
+                                Command="{Binding QuickFilterCommand}"
+                                CommandParameter="Beach"
+                                BackgroundColor="#1E293B"
+                                TextColor="#94A3B8"
+                                FontSize="12"
+                                CornerRadius="16"
+                                HeightRequest="32"
+                                Padding="12,0" />
+                        <Button Text="🏰 Castles"
+                                Command="{Binding QuickFilterCommand}"
+                                CommandParameter="Castle"
+                                BackgroundColor="#1E293B"
+                                TextColor="#94A3B8"
+                                FontSize="12"
+                                CornerRadius="16"
+                                HeightRequest="32"
+                                Padding="12,0" />
+                        <Button Text="📍 Custom GPS"
+                                Command="{Binding ToggleCustomCoordsCommand}"
+                                BackgroundColor="#312E81"
+                                TextColor="#A5B4FC"
+                                FontSize="12"
+                                CornerRadius="16"
+                                HeightRequest="32"
+                                Padding="12,0" />
+                    </HorizontalStackLayout>
+                </ScrollView>
+
+                <!-- Custom GPS Coordinates Entry Card (Collapsible) -->
+                <Border IsVisible="{Binding IsCustomCoordsVisible}"
+                        BackgroundColor="#111827"
+                        Stroke="#4338CA"
+                        StrokeThickness="1"
+                        StrokeShape="RoundRectangle 8"
+                        Padding="12">
+                    <VerticalStackLayout Spacing="8">
+                        <Label Text="Pinpoint Any Coordinate On Earth"
+                               FontSize="13"
+                               FontAttributes="Bold"
+                               TextColor="#A5B4FC" />
+                        <Grid ColumnDefinitions="*, *" ColumnSpacing="8">
+                            <Entry Grid.Column="0"
+                                   Placeholder="Latitude (-90 to 90)"
+                                   PlaceholderColor="#64748B"
+                                   TextColor="#FFFFFF"
+                                   Text="{Binding CustomLatitude}"
+                                   Keyboard="Numeric" />
+                            <Entry Grid.Column="1"
+                                   Placeholder="Longitude (-180 to 180)"
+                                   PlaceholderColor="#64748B"
+                                   TextColor="#FFFFFF"
+                                   Text="{Binding CustomLongitude}"
+                                   Keyboard="Numeric" />
+                        </Grid>
+                        <Entry Placeholder="Destination Name (e.g. Secret Lookout Point)"
+                               PlaceholderColor="#64748B"
+                               TextColor="#FFFFFF"
+                               Text="{Binding CustomPlaceName}" />
+                        <Button Text="Request Tour at These Coordinates"
+                                Command="{Binding RequestCustomCoordsCommand}"
+                                BackgroundColor="#4F46E5"
+                                TextColor="#FFFFFF"
+                                FontAttributes="Bold"
+                                CornerRadius="6"
+                                HeightRequest="38" />
+                    </VerticalStackLayout>
+                </Border>
+
+                <!-- Error / Info Message -->
+                <Label Text="{Binding ErrorMessage}"
+                       IsVisible="{Binding HasError}"
+                       TextColor="#F87171"
+                       FontSize="13"
+                       LineBreakMode="WordWrap" />
+            </VerticalStackLayout>
+        </Border>
+
+        <!-- Main Body: Results CollectionView & Empty States -->
+        <Grid Grid.Row="1" Padding="16">
+            <!-- Loading Indicator -->
+            <ActivityIndicator IsRunning="{Binding IsBusy}"
+                               IsVisible="{Binding IsBusy}"
+                               Color="#6366F1"
+                               HorizontalOptions="Center"
+                               VerticalOptions="Center" />
+
+            <!-- Places List -->
+            <CollectionView ItemsSource="{Binding Places}"
+                            IsVisible="{Binding HasResults}"
+                            SelectionMode="None">
+                <CollectionView.ItemTemplate>
+                    <DataTemplate x:DataType="models:PlaceModel">
+                        <Border BackgroundColor="#0F172A"
+                                Stroke="#1E293B"
+                                StrokeThickness="1"
+                                StrokeShape="RoundRectangle 10"
+                                Margin="0,0,0,12"
+                                Padding="16">
+                            <Grid RowDefinitions="Auto, Auto, Auto" RowSpacing="8">
+                                <Grid Grid.Row="0" ColumnDefinitions="*, Auto">
+                                    <Label Grid.Column="0"
+                                           Text="{Binding Name}"
+                                           FontSize="16"
+                                           FontAttributes="Bold"
+                                           TextColor="#F8FAFC" />
+                                    <Border Grid.Column="1"
+                                            BackgroundColor="#1E293B"
+                                            Stroke="#334155"
+                                            StrokeThickness="1"
+                                            StrokeShape="RoundRectangle 12"
+                                            Padding="8,2">
+                                        <Label Text="{Binding CoordinatesDisplay}"
+                                               FontSize="11"
+                                               TextColor="#94A3B8" />
+                                    </Border>
+                                </Grid>
+
+                                <Label Grid.Row="1"
+                                       Text="{Binding Description}"
+                                       FontSize="13"
+                                       TextColor="#94A3B8"
+                                       LineBreakMode="WordWrap" />
+
+                                <Button Grid.Row="2"
+                                        Text="Request Live Tour Here"
+                                        Command="{Binding Source={RelativeSource AncestorType={x:Type vm:ExploreViewModel}}, Path=SelectPlaceCommand}"
+                                        CommandParameter="{Binding .}"
+                                        BackgroundColor="#6366F1"
+                                        TextColor="#FFFFFF"
+                                        FontAttributes="Bold"
+                                        CornerRadius="8"
+                                        HeightRequest="40"
+                                        Margin="0,4,0,0" />
+                            </Grid>
+                        </Border>
+                    </DataTemplate>
+                </CollectionView.ItemTemplate>
+            </CollectionView>
+
+            <!-- Initial Empty State -->
+            <VerticalStackLayout IsVisible="{Binding HasResults, Converter={x:Null}}"
+                                 HorizontalOptions="Center"
+                                 VerticalOptions="Center"
+                                 Spacing="12">
+                <Label Text="🧭"
+                       FontSize="48"
+                       HorizontalOptions="Center" />
+                <Label Text="Start Exploring the World"
+                       FontSize="18"
+                       FontAttributes="Bold"
+                       TextColor="#E2E8F0"
+                       HorizontalOptions="Center" />
+                <Label Text="Search for any historic place, natural landmark, or tap a chip above to see what local volunteers can stream live for you."
+                       FontSize="13"
+                       TextColor="#64748B"
+                       HorizontalOptions="Center"
+                       HorizontalTextAlignment="Center"
+                       MaximumWidthRequest="320" />
+            </VerticalStackLayout>
+        </Grid>
+    </Grid>
+
+</ContentPage>

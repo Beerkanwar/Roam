@@ -31,12 +31,18 @@ public static class MauiProgram
         builder.Services.AddTransient<LoginViewModel>();
         builder.Services.AddTransient<RegisterViewModel>();
         builder.Services.AddTransient<LiveSessionViewModel>();
+        builder.Services.AddTransient<ExploreViewModel>();
+        builder.Services.AddTransient<CreateRequestViewModel>();
+        builder.Services.AddTransient<VolunteerDashboardViewModel>();
 
         // Register Pages in DI container
         builder.Services.AddTransient<HomePage>();
         builder.Services.AddTransient<LoginPage>();
         builder.Services.AddTransient<RegisterPage>();
         builder.Services.AddTransient<LiveSessionPage>();
+        builder.Services.AddTransient<ExplorePage>();
+        builder.Services.AddTransient<CreateRequestPage>();
+        builder.Services.AddTransient<VolunteerDashboardPage>();
 
 #if DEBUG
         builder.Logging.AddDebug();

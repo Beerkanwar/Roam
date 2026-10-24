@@ -98,6 +98,18 @@ public class ApiClient : IApiClient
         return response.IsSuccessStatusCode;
     }
 
+    public async Task<bool> PutAsync<TRequest>(string endpoint, TRequest data, bool requireAuth = true, CancellationToken cancellationToken = default)
+    {
+        var json = JsonSerializer.Serialize(data, JsonOptions);
+        var request = new HttpRequestMessage(HttpMethod.Put, endpoint)
+        {
+            Content = new StringContent(json, Encoding.UTF8, "application/json")
+        };
+
+        var response = await SendAsync(request, requireAuth, cancellationToken);
+        return response.IsSuccessStatusCode;
+    }
+
     private static HttpRequestMessage CloneHttpRequestMessage(HttpRequestMessage req)
     {
         var clone = new HttpRequestMessage(req.Method, req.RequestUri);

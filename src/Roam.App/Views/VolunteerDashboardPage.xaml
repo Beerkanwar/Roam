@@ -1,0 +1,265 @@
+<?xml version="1.0" encoding="utf-8" ?>
+<ContentPage xmlns="http://schemas.microsoft.com/dotnet/2021/maui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2009/xaml"
+             xmlns:vm="clr-namespace:Roam.App.ViewModels"
+             xmlns:models="clr-namespace:Roam.App.Models"
+             x:Class="Roam.App.Views.VolunteerDashboardPage"
+             x:DataType="vm:VolunteerDashboardViewModel"
+             Title="{Binding Title}"
+             BackgroundColor="#0B0F19">
+
+    <Grid RowDefinitions="Auto, *">
+        <!-- Top Control & Status Panel -->
+        <Border Grid.Row="0"
+                BackgroundColor="#0F172A"
+                Stroke="#1E293B"
+                StrokeThickness="1"
+                Padding="16,14">
+            <VerticalStackLayout Spacing="12">
+                <!-- Header with Status -->
+                <Grid ColumnDefinitions="*, Auto">
+                    <VerticalStackLayout Grid.Column="0" Spacing="2">
+                        <Label Text="🚀 Volunteer Dispatch Hub"
+                               FontSize="18"
+                               FontAttributes="Bold"
+                               TextColor="#F8FAFC" />
+                        <Label Text="{Binding VolunteerStatusText}"
+                               FontSize="12"
+                               TextColor="#10B981" />
+                    </VerticalStackLayout>
+
+                    <Button Grid.Column="1"
+                            Text="🔄 Refresh"
+                            Command="{Binding RefreshRequestsCommand}"
+                            BackgroundColor="#1E293B"
+                            TextColor="#94A3B8"
+                            CornerRadius="8"
+                            FontSize="12"
+                            HeightRequest="36"
+                            Padding="12,0" />
+                </Grid>
+
+                <!-- Volunteer Active Controls -->
+                <VerticalStackLayout IsVisible="{Binding IsVolunteer}" Spacing="10">
+                    <!-- Dispatch Availability Switch -->
+                    <Border BackgroundColor="#1E293B"
+                            Stroke="#334155"
+                            StrokeThickness="1"
+                            StrokeShape="RoundRectangle 8"
+                            Padding="12,8">
+                        <Grid ColumnDefinitions="*, Auto">
+                            <VerticalStackLayout Grid.Column="0" Spacing="2" VerticalOptions="Center">
+                                <Label Text="Available for Incoming Requests"
+                                       FontSize="13"
+                                       FontAttributes="Bold"
+                                       TextColor="#F8FAFC" />
+                                <Label Text="Receive live exploration notifications from nearby travellers"
+                                       FontSize="11"
+                                       TextColor="#94A3B8" />
+                            </VerticalStackLayout>
+                            <Switch Grid.Column="1"
+                                    IsToggled="{Binding IsAvailable}"
+                                    OnColor="#10B981"
+                                    ThumbColor="#FFFFFF"
+                                    VerticalOptions="Center" />
+                        </Grid>
+                    </Border>
+
+                    <!-- Location & Radius Controls -->
+                    <Grid ColumnDefinitions="*, Auto" ColumnSpacing="10">
+                        <Button Grid.Column="0"
+                                Text="{Binding CurrentLocationText}"
+                                Command="{Binding UpdateLocationCommand}"
+                                BackgroundColor="#1E293B"
+                                TextColor="#94A3B8"
+                                FontSize="12"
+                                CornerRadius="8"
+                                HeightRequest="36"
+                                Padding="8,0" />
+
+                        <Border Grid.Column="1"
+                                BackgroundColor="#1E293B"
+                                Stroke="#334155"
+                                StrokeThickness="1"
+                                StrokeShape="RoundRectangle 8"
+                                Padding="12,0"
+                                HeightRequest="36">
+                            <Label Text="{Binding RadiusDisplayText}"
+                                   FontSize="12"
+                                   TextColor="#A5B4FC"
+                                   VerticalOptions="Center" />
+                        </Border>
+                    </Grid>
+
+                    <!-- Radius Slider -->
+                    <Slider Minimum="1"
+                            Maximum="50"
+                            Value="{Binding RadiusKm}"
+                            MinimumTrackColor="#6366F1"
+                            MaximumTrackColor="#334155"
+                            ThumbColor="#6366F1" />
+                </VerticalStackLayout>
+
+                <!-- Error Message -->
+                <Label Text="{Binding ErrorMessage}"
+                       IsVisible="{Binding HasError}"
+                       TextColor="#F87171"
+                       FontSize="13"
+                       LineBreakMode="WordWrap" />
+            </VerticalStackLayout>
+        </Border>
+
+        <!-- Main Body -->
+        <Grid Grid.Row="1" Padding="16">
+            <!-- Non-Volunteer Application Card -->
+            <VerticalStackLayout IsVisible="{Binding IsNotVolunteer}"
+                                 HorizontalOptions="Center"
+                                 VerticalOptions="Center"
+                                 Spacing="16"
+                                 MaximumWidthRequest="360">
+                <Border BackgroundColor="#0F172A"
+                        Stroke="#334155"
+                        StrokeThickness="1"
+                        StrokeShape="RoundRectangle 12"
+                        Padding="24">
+                    <VerticalStackLayout Spacing="14" HorizontalOptions="Center">
+                        <Label Text="🌍"
+                               FontSize="48"
+                               HorizontalOptions="Center" />
+                        <Label Text="Become a Roam Explorer"
+                               FontSize="20"
+                               FontAttributes="Bold"
+                               TextColor="#F8FAFC"
+                               HorizontalOptions="Center" />
+                        <Label Text="Share your city, historic spots, or natural wonders with travellers worldwide. All volunteers must be verified adults (18+)."
+                               FontSize="13"
+                               TextColor="#94A3B8"
+                               HorizontalTextAlignment="Center" />
+
+                        <Button Text="Apply to Become a Volunteer"
+                                Command="{Binding ApplyVolunteerCommand}"
+                                IsEnabled="{Binding IsNotBusy}"
+                                BackgroundColor="#6366F1"
+                                TextColor="#FFFFFF"
+                                FontAttributes="Bold"
+                                CornerRadius="8"
+                                HeightRequest="44"
+                                Margin="0,8,0,0" />
+                    </VerticalStackLayout>
+                </Border>
+            </VerticalStackLayout>
+
+            <!-- Volunteer Incoming Requests View -->
+            <Grid IsVisible="{Binding IsVolunteer}">
+                <!-- Refreshing indicator -->
+                <ActivityIndicator IsRunning="{Binding IsRefreshing}"
+                                   IsVisible="{Binding IsRefreshing}"
+                                   Color="#6366F1"
+                                   HorizontalOptions="Center"
+                                   VerticalOptions="Center" />
+
+                <!-- Requests List -->
+                <CollectionView ItemsSource="{Binding Requests}"
+                                IsVisible="{Binding HasRequests}"
+                                SelectionMode="None">
+                    <CollectionView.ItemTemplate>
+                        <DataTemplate x:DataType="models:TourRequestModel">
+                            <Border BackgroundColor="#0F172A"
+                                    Stroke="#1E293B"
+                                    StrokeThickness="1"
+                                    StrokeShape="RoundRectangle 12"
+                                    Margin="0,0,0,12"
+                                    Padding="16">
+                                <Grid RowDefinitions="Auto, Auto, Auto, Auto" RowSpacing="8">
+                                    <!-- Header Row -->
+                                    <Grid Grid.Row="0" ColumnDefinitions="*, Auto">
+                                        <Label Grid.Column="0"
+                                               Text="{Binding PlaceName}"
+                                               FontSize="16"
+                                               FontAttributes="Bold"
+                                               TextColor="#F8FAFC" />
+                                        <Border Grid.Column="1"
+                                                BackgroundColor="#1E293B"
+                                                Stroke="#334155"
+                                                StrokeThickness="1"
+                                                StrokeShape="RoundRectangle 12"
+                                                Padding="8,2">
+                                            <Label Text="{Binding ModeDisplay}"
+                                                   FontSize="11"
+                                                   TextColor="#60A5FA" />
+                                        </Border>
+                                    </Grid>
+
+                                    <!-- Privacy & Location Row -->
+                                    <Grid Grid.Row="1" ColumnDefinitions="Auto, *">
+                                        <Label Grid.Column="0"
+                                               Text="{Binding VisibilityDisplay}"
+                                               FontSize="12"
+                                               TextColor="#A5B4FC"
+                                               Margin="0,0,12,0" />
+                                        <Label Grid.Column="1"
+                                               Text="{Binding LocationDisplay}"
+                                               FontSize="12"
+                                               TextColor="#64748B" />
+                                    </Grid>
+
+                                    <!-- Description -->
+                                    <Label Grid.Row="2"
+                                           Text="{Binding DescriptionSnippet}"
+                                           FontSize="13"
+                                           TextColor="#CBD5E1"
+                                           LineBreakMode="WordWrap" />
+
+                                    <!-- Actions Row -->
+                                    <Grid Grid.Row="3" ColumnDefinitions="*, *" ColumnSpacing="10" Margin="0,4,0,0">
+                                        <Button Grid.Column="0"
+                                                Text="Accept Request"
+                                                Command="{Binding Source={RelativeSource AncestorType={x:Type vm:VolunteerDashboardViewModel}}, Path=AcceptRequestCommand}"
+                                                CommandParameter="{Binding .}"
+                                                BackgroundColor="#10B981"
+                                                TextColor="#FFFFFF"
+                                                FontAttributes="Bold"
+                                                CornerRadius="8"
+                                                HeightRequest="38" />
+
+                                        <Button Grid.Column="1"
+                                                Text="Start Live Tour"
+                                                Command="{Binding Source={RelativeSource AncestorType={x:Type vm:VolunteerDashboardViewModel}}, Path=StartTourCommand}"
+                                                CommandParameter="{Binding .}"
+                                                BackgroundColor="#6366F1"
+                                                TextColor="#FFFFFF"
+                                                FontAttributes="Bold"
+                                                CornerRadius="8"
+                                                HeightRequest="38" />
+                                    </Grid>
+                                </Grid>
+                            </Border>
+                        </DataTemplate>
+                    </CollectionView.ItemTemplate>
+                </CollectionView>
+
+                <!-- Empty State (No Requests In Range) -->
+                <VerticalStackLayout IsVisible="{Binding HasRequests, Converter={x:Null}}"
+                                     HorizontalOptions="Center"
+                                     VerticalOptions="Center"
+                                     Spacing="12">
+                    <Label Text="📡"
+                           FontSize="48"
+                           HorizontalOptions="Center" />
+                    <Label Text="Radar Scanning for Requests"
+                           FontSize="18"
+                           FontAttributes="Bold"
+                           TextColor="#E2E8F0"
+                           HorizontalOptions="Center" />
+                    <Label Text="You are active on dispatch. As soon as a traveller submits a tour request near your coordinates, it will appear here instantly."
+                           FontSize="13"
+                           TextColor="#64748B"
+                           HorizontalOptions="Center"
+                           HorizontalTextAlignment="Center"
+                           MaximumWidthRequest="320" />
+                </VerticalStackLayout>
+            </Grid>
+        </Grid>
+    </Grid>
+
+</ContentPage>
