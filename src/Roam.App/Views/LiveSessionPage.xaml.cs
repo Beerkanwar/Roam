@@ -5,13 +5,9 @@ namespace Roam.App.Views;
 
 public partial class LiveSessionPage : ContentPage
 {
-    public LiveSessionPage()
+    public LiveSessionPage(LiveSessionViewModel viewModel)
     {
         InitializeComponent();
-    }
-
-    public LiveSessionPage(LiveSessionViewModel viewModel) : this()
-    {
         BindingContext = viewModel;
     }
 }

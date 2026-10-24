@@ -1,5 +1,7 @@
 import React, { useEffect, useState, useRef } from 'react';
 import * as signalR from '@microsoft/signalr';
+import PostSessionFeedbackModal from './PostSessionFeedbackModal';
+import ReportAndBlockModal from './ReportAndBlockModal';
 
 interface LiveSessionProps {
     sessionId: string;
@@ -30,6 +32,11 @@ const LiveSession: React.FC<LiveSessionProps> = ({ sessionId, token, targetUserI
     // Media controls state
     const [isAudioMuted, setIsAudioMuted] = useState(false);
     const [isVideoMuted, setIsVideoMuted] = useState(true);
+
+    // Safety and Feedback state
+    const [showFeedbackModal, setShowFeedbackModal] = useState(false);
+    const [showReportModal, setShowReportModal] = useState(false);
+    const [counterpartUserId, setCounterpartUserId] = useState<string>(targetUserId || '');
 
     // WebRTC refs
     const peerConnection = useRef<RTCPeerConnection | null>(null);
@@ -193,6 +200,9 @@ const LiveSession: React.FC<LiveSessionProps> = ({ sessionId, token, targetUserI
 
                 cConnection.on('ChatMessageReceived', (message: ChatMessage) => {
                     setChatMessages(prev => [...prev, message]);
+                    if (message.senderId) {
+                        setCounterpartUserId(prev => prev || message.senderId);
+                    }
                 });
 
                 await cConnection.start();
@@ -265,33 +275,19 @@ const LiveSession: React.FC<LiveSessionProps> = ({ sessionId, token, targetUserI
         }
     };
 
-    const handleReport = async () => {
-        const reportedUser = targetUserId || prompt('Enter user ID to report:') || '';
-        if (!reportedUser.trim()) return;
+    const authFetch = async (url: string, options: RequestInit = {}) => {
+        const headers = new Headers(options.headers || {});
+        if (authToken) {
+            headers.set('Authorization', `Bearer ${authToken}`);
+        }
+        return fetch(url, { ...options, headers });
+    };
 
-        try {
-            const headers: HeadersInit = {
-                'Content-Type': 'application/json',
-                ...(authToken ? { 'Authorization': `Bearer ${authToken}` } : {})
-            };
-            const response = await fetch(`${API_BASE}/api/v1/trust-safety/reports`, {
-                method: 'POST',
-                headers,
-                body: JSON.stringify({
-                    reportedUserId: reportedUser,
-                    tourSessionId: sessionId,
-                    reason: 2, // InappropriateContent
-                    description: 'Report submitted from live session.',
-                    severity: 1 // Medium
-                })
-            });
-            if (response.ok) {
-                alert('Report submitted successfully.');
-            } else {
-                alert('Failed to submit report.');
-            }
-        } catch (error) {
-            console.error(error);
+    const handleLeaveClick = () => {
+        if (counterpartUserId) {
+            setShowFeedbackModal(true);
+        } else if (onLeaveSession) {
+            onLeaveSession();
         }
     };
 
@@ -303,11 +299,17 @@ const LiveSession: React.FC<LiveSessionProps> = ({ sessionId, token, targetUserI
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                     <h2 style={{ margin: 0 }}>Live Session: {sessionId}</h2>
                     <div style={{ display: 'flex', gap: '10px' }}>
-                        <button onClick={handleReport} style={{ padding: '8px 16px', backgroundColor: '#d13438', color: 'white', border: 'none', borderRadius: '4px', cursor: 'pointer' }}>
-                            Report User
+                        <button 
+                            onClick={() => setShowReportModal(true)} 
+                            style={{ padding: '8px 16px', backgroundColor: '#dc2626', color: 'white', border: 'none', borderRadius: '4px', cursor: 'pointer', fontWeight: 600 }}
+                        >
+                            🛡️ Safety &amp; Report
                         </button>
                         {onLeaveSession && (
-                            <button onClick={onLeaveSession} style={{ padding: '8px 16px', backgroundColor: '#6c757d', color: 'white', border: 'none', borderRadius: '4px', cursor: 'pointer' }}>
+                            <button 
+                                onClick={handleLeaveClick} 
+                                style={{ padding: '8px 16px', backgroundColor: '#475569', color: 'white', border: 'none', borderRadius: '4px', cursor: 'pointer' }}
+                            >
                                 Leave Session
                             </button>
                         )}
@@ -373,6 +375,39 @@ const LiveSession: React.FC<LiveSessionProps> = ({ sessionId, token, targetUserI
                     </button>
                 </form>
             </div>
+
+            {/* Post-Session Feedback Modal */}
+            {showFeedbackModal && (
+                <PostSessionFeedbackModal
+                    apiBase={API_BASE}
+                    authFetch={authFetch}
+                    tourSessionId={sessionId}
+                    targetUserId={counterpartUserId}
+                    onClose={() => {
+                        setShowFeedbackModal(false);
+                        if (onLeaveSession) onLeaveSession();
+                    }}
+                    onSuccess={() => {
+                        setShowFeedbackModal(false);
+                        if (onLeaveSession) onLeaveSession();
+                    }}
+                />
+            )}
+
+            {/* Safety Reporting & Blocking Modal */}
+            {showReportModal && (
+                <ReportAndBlockModal
+                    apiBase={API_BASE}
+                    authFetch={authFetch}
+                    targetUserId={counterpartUserId}
+                    tourSessionId={sessionId}
+                    onClose={() => setShowReportModal(false)}
+                    onUserBlocked={() => {
+                        setShowReportModal(false);
+                        if (onLeaveSession) onLeaveSession();
+                    }}
+                />
+            )}
 
         </div>
     );

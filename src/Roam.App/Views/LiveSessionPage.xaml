@@ -1,56 +1,352 @@
 <?xml version="1.0" encoding="utf-8" ?>
 <ContentPage xmlns="http://schemas.microsoft.com/dotnet/2021/maui"
              xmlns:x="http://schemas.microsoft.com/winfx/2009/xaml"
-             xmlns:viewmodels="clr-namespace:Roam.App.ViewModels"
+             xmlns:vm="clr-namespace:Roam.App.ViewModels"
              xmlns:contracts="clr-namespace:Roam.Contracts.Chat;assembly=Roam.Contracts"
              x:Class="Roam.App.Views.LiveSessionPage"
-             x:DataType="viewmodels:LiveSessionViewModel"
-             Title="Live Session MVP">
-    
-    <ContentPage.BindingContext>
-        <viewmodels:LiveSessionViewModel />
-    </ContentPage.BindingContext>
+             x:DataType="vm:LiveSessionViewModel"
+             Title="{Binding Title}"
+             BackgroundColor="#0B0F19">
 
-    <Grid RowDefinitions="Auto, *, Auto">
-        
-        <!-- Top Toolbar -->
-        <HorizontalStackLayout Grid.Row="0" Padding="10" Spacing="10" BackgroundColor="#E0E0E0">
-            <Entry Placeholder="Session ID" Text="{Binding SessionId}" WidthRequest="150" />
-            <Button Text="Join" Command="{Binding JoinCommand}" />
-            <Button Text="Leave" Command="{Binding LeaveCommand}" />
-            <Label Text="{Binding StatusText}" VerticalOptions="Center" Margin="10,0,0,0" />
-        </HorizontalStackLayout>
-        
-        <!-- Main Area: WebRTC Placeholder + Chat -->
-        <Grid Grid.Row="1" ColumnDefinitions="*, 300">
-            
-            <!-- WebRTC Placeholder (A local HTML file or native bindings will go here later) -->
-            <WebView Grid.Column="0" Source="about:blank" BackgroundColor="Black" />
-            <Label Grid.Column="0" Text="WebRTC Video Stream Placeholder" 
-                   TextColor="White" HorizontalOptions="Center" VerticalOptions="Center" />
+    <Grid>
+        <!-- Main Session Layout -->
+        <Grid RowDefinitions="Auto, *">
+            <!-- Top Toolbar -->
+            <Border Grid.Row="0"
+                    BackgroundColor="#0F172A"
+                    Stroke="#1E293B"
+                    StrokeThickness="1"
+                    Padding="14,10">
+                <Grid ColumnDefinitions="Auto, *, Auto, Auto, Auto" ColumnSpacing="8">
+                    <Label Grid.Column="0"
+                           Text="🔴 LIVE"
+                           FontSize="12"
+                           FontAttributes="Bold"
+                           TextColor="#EF4444"
+                           VerticalOptions="Center" />
 
-            <!-- Chat Panel -->
-            <Grid Grid.Column="1" RowDefinitions="*, Auto" BackgroundColor="#F5F5F5">
-                
-                <CollectionView Grid.Row="0" ItemsSource="{Binding ChatMessages}" Margin="10">
-                    <CollectionView.ItemTemplate>
-                        <DataTemplate x:DataType="contracts:ChatMessageDto">
-                            <VerticalStackLayout Margin="0,5">
-                                <Label Text="{Binding SenderName}" FontAttributes="Bold" FontSize="12" />
-                                <Label Text="{Binding Text}" FontSize="14" />
+                    <Border Grid.Column="1"
+                            BackgroundColor="#1E293B"
+                            Stroke="#334155"
+                            StrokeThickness="1"
+                            StrokeShape="RoundRectangle 6"
+                            Padding="8,0">
+                        <Entry Placeholder="Session ID..."
+                               PlaceholderColor="#64748B"
+                               TextColor="#F8FAFC"
+                               Text="{Binding SessionId}"
+                               FontSize="13"
+                               VerticalOptions="Center" />
+                    </Border>
+
+                    <Button Grid.Column="2"
+                            Text="Join"
+                            Command="{Binding JoinCommand}"
+                            BackgroundColor="#6366F1"
+                            TextColor="#FFFFFF"
+                            FontAttributes="Bold"
+                            CornerRadius="6"
+                            HeightRequest="36"
+                            Padding="12,0" />
+
+                    <Button Grid.Column="3"
+                            Text="Leave"
+                            Command="{Binding LeaveCommand}"
+                            BackgroundColor="#334155"
+                            TextColor="#94A3B8"
+                            CornerRadius="6"
+                            HeightRequest="36"
+                            Padding="12,0" />
+
+                    <Button Grid.Column="4"
+                            Text="🛡️ Safety"
+                            Command="{Binding OpenReportCommand}"
+                            BackgroundColor="#7F1D1D"
+                            TextColor="#FECACA"
+                            FontAttributes="Bold"
+                            CornerRadius="6"
+                            HeightRequest="36"
+                            Padding="10,0" />
+                </Grid>
+            </Border>
+
+            <!-- Video & Chat Split Area -->
+            <Grid Grid.Row="1" ColumnDefinitions="*, 280">
+                <!-- Video Stream Viewport -->
+                <Grid Grid.Column="0" BackgroundColor="#000000" Margin="10">
+                    <Border BackgroundColor="#050811"
+                            Stroke="#1E293B"
+                            StrokeThickness="1"
+                            StrokeShape="RoundRectangle 12">
+                        <Grid>
+                            <!-- Stream Placeholder Viewport -->
+                            <VerticalStackLayout HorizontalOptions="Center"
+                                                 VerticalOptions="Center"
+                                                 Spacing="10">
+                                <Label Text="📹"
+                                       FontSize="40"
+                                       HorizontalOptions="Center" />
+                                <Label Text="{Binding StatusText}"
+                                       FontSize="14"
+                                       FontAttributes="Bold"
+                                       TextColor="#94A3B8"
+                                       HorizontalOptions="Center" />
+                                <Label Text="Realtime WebRTC peer media relays directly between authenticated explorer devices."
+                                       FontSize="11"
+                                       TextColor="#64748B"
+                                       HorizontalOptions="Center"
+                                       HorizontalTextAlignment="Center"
+                                       MaximumWidthRequest="280" />
                             </VerticalStackLayout>
-                        </DataTemplate>
-                    </CollectionView.ItemTemplate>
-                </CollectionView>
-                
-                <!-- Chat Input -->
-                <HorizontalStackLayout Grid.Row="1" Padding="10" Spacing="10" BackgroundColor="White">
-                    <Entry Placeholder="Type a message..." Text="{Binding MessageText}" WidthRequest="200" />
-                    <Button Text="Send" Command="{Binding SendCommand}" />
-                </HorizontalStackLayout>
+
+                            <!-- Counterpart Info Tag -->
+                            <Border HorizontalOptions="Start"
+                                    VerticalOptions="Start"
+                                    Margin="14"
+                                    BackgroundColor="#CC0F172A"
+                                    Stroke="#334155"
+                                    StrokeThickness="1"
+                                    StrokeShape="RoundRectangle 14"
+                                    Padding="10,4">
+                                <Label Text="{Binding CounterpartName, StringFormat='Exploring with: {0}'}"
+                                       FontSize="11"
+                                       TextColor="#E2E8F0"
+                                       FontAttributes="Bold" />
+                            </Border>
+                        </Grid>
+                    </Border>
+                </Grid>
+
+                <!-- In-Session Realtime Chat -->
+                <Border Grid.Column="1"
+                        BackgroundColor="#0F172A"
+                        Stroke="#1E293B"
+                        StrokeThickness="1"
+                        StrokeShape="RoundRectangle 12"
+                        Margin="0,10,10,10">
+                    <Grid RowDefinitions="Auto, *, Auto">
+                        <!-- Chat Header -->
+                        <Border Grid.Row="0"
+                                BackgroundColor="#1E293B"
+                                Padding="12,10">
+                            <Label Text="💬 Live Tour Chat"
+                                   FontSize="13"
+                                   FontAttributes="Bold"
+                                   TextColor="#F8FAFC" />
+                        </Border>
+
+                        <!-- Messages CollectionView -->
+                        <CollectionView Grid.Row="1"
+                                        ItemsSource="{Binding ChatMessages}"
+                                        Margin="10"
+                                        SelectionMode="None">
+                            <CollectionView.ItemTemplate>
+                                <DataTemplate x:DataType="contracts:ChatMessageDto">
+                                    <Border BackgroundColor="#1E293B"
+                                            Stroke="#334155"
+                                            StrokeThickness="1"
+                                            StrokeShape="RoundRectangle 8"
+                                            Margin="0,0,0,8"
+                                            Padding="10,6">
+                                        <VerticalStackLayout Spacing="2">
+                                            <Label Text="{Binding SenderName}"
+                                                   FontAttributes="Bold"
+                                                   FontSize="11"
+                                                   TextColor="#818CF8" />
+                                            <Label Text="{Binding Text}"
+                                                   FontSize="13"
+                                                   TextColor="#F8FAFC"
+                                                   LineBreakMode="WordWrap" />
+                                        </VerticalStackLayout>
+                                    </Border>
+                                </DataTemplate>
+                            </CollectionView.ItemTemplate>
+                        </CollectionView>
+
+                        <!-- Chat Input Box -->
+                        <Border Grid.Row="2"
+                                BackgroundColor="#1E293B"
+                                Padding="8">
+                            <Grid ColumnDefinitions="*, Auto" ColumnSpacing="6">
+                                <Entry Grid.Column="0"
+                                       Placeholder="Message..."
+                                       PlaceholderColor="#64748B"
+                                       TextColor="#F8FAFC"
+                                       Text="{Binding MessageText}"
+                                       FontSize="13"
+                                       ReturnType="Send"
+                                       ReturnCommand="{Binding SendCommand}" />
+                                <Button Grid.Column="1"
+                                        Text="Send"
+                                        Command="{Binding SendCommand}"
+                                        BackgroundColor="#6366F1"
+                                        TextColor="#FFFFFF"
+                                        FontAttributes="Bold"
+                                        CornerRadius="6"
+                                        HeightRequest="36"
+                                        Padding="10,0" />
+                            </Grid>
+                        </Border>
+                    </Grid>
+                </Border>
             </Grid>
-            
         </Grid>
-        
+
+        <!-- Post-Session Feedback Modal Overlay -->
+        <Border IsVisible="{Binding IsFeedbackVisible}"
+                BackgroundColor="#E6050811"
+                StrokeThickness="0"
+                ZIndex="100">
+            <Border BackgroundColor="#0F172A"
+                    Stroke="#334155"
+                    StrokeThickness="1"
+                    StrokeShape="RoundRectangle 16"
+                    HorizontalOptions="Center"
+                    VerticalOptions="Center"
+                    WidthRequest="380"
+                    Padding="22">
+                <VerticalStackLayout Spacing="14">
+                    <Label Text="🌟 Session Feedback"
+                           FontSize="18"
+                           FontAttributes="Bold"
+                           TextColor="#F8FAFC"
+                           HorizontalOptions="Center" />
+
+                    <Label Text="How was your live exploration experience?"
+                           FontSize="13"
+                           TextColor="#94A3B8"
+                           HorizontalOptions="Center" />
+
+                    <!-- Rating Buttons Row -->
+                    <Grid ColumnDefinitions="*, *, *" ColumnSpacing="8">
+                        <Button Grid.Column="0"
+                                Text="👍 Positive"
+                                BackgroundColor="#065F46"
+                                TextColor="#A7F3D0"
+                                FontAttributes="Bold"
+                                CornerRadius="8"
+                                HeightRequest="38" />
+                        <Button Grid.Column="1"
+                                Text="😐 Neutral"
+                                BackgroundColor="#334155"
+                                TextColor="#94A3B8"
+                                CornerRadius="8"
+                                HeightRequest="38" />
+                        <Button Grid.Column="2"
+                                Text="👎 Negative"
+                                BackgroundColor="#334155"
+                                TextColor="#94A3B8"
+                                CornerRadius="8"
+                                HeightRequest="38" />
+                    </Grid>
+
+                    <!-- Comments Editor -->
+                    <Border BackgroundColor="#1E293B"
+                            Stroke="#334155"
+                            StrokeThickness="1"
+                            StrokeShape="RoundRectangle 8"
+                            Padding="8">
+                        <Editor Placeholder="Optional comments on guidance, scenery, audio..."
+                                PlaceholderColor="#64748B"
+                                TextColor="#F8FAFC"
+                                Text="{Binding FeedbackComments}"
+                                HeightRequest="80"
+                                AutoSize="Disabled" />
+                    </Border>
+
+                    <!-- Action Buttons -->
+                    <Grid ColumnDefinitions="*, *" ColumnSpacing="10">
+                        <Button Grid.Column="0"
+                                Text="Skip"
+                                Command="{Binding CloseFeedbackCommand}"
+                                BackgroundColor="#1E293B"
+                                TextColor="#94A3B8"
+                                CornerRadius="8"
+                                HeightRequest="40" />
+                        <Button Grid.Column="1"
+                                Text="Submit"
+                                Command="{Binding SubmitFeedbackCommand}"
+                                BackgroundColor="#6366F1"
+                                TextColor="#FFFFFF"
+                                FontAttributes="Bold"
+                                CornerRadius="8"
+                                HeightRequest="40" />
+                    </Grid>
+                </VerticalStackLayout>
+            </Border>
+        </Border>
+
+        <!-- Safety Report & Block Modal Overlay -->
+        <Border IsVisible="{Binding IsReportVisible}"
+                BackgroundColor="#E6050811"
+                StrokeThickness="0"
+                ZIndex="110">
+            <Border BackgroundColor="#0F172A"
+                    Stroke="#7F1D1D"
+                    StrokeThickness="1"
+                    StrokeShape="RoundRectangle 16"
+                    HorizontalOptions="Center"
+                    VerticalOptions="Center"
+                    WidthRequest="380"
+                    Padding="22">
+                <VerticalStackLayout Spacing="12">
+                    <Label Text="🛡️ Safety &amp; Moderation"
+                           FontSize="18"
+                           FontAttributes="Bold"
+                           TextColor="#EF4444"
+                           HorizontalOptions="Center" />
+
+                    <Label Text="File a report against this participant for policy violations, or block them from future tours."
+                           FontSize="12"
+                           TextColor="#94A3B8"
+                           HorizontalTextAlignment="Center" />
+
+                    <!-- Description Editor -->
+                    <Border BackgroundColor="#1E293B"
+                            Stroke="#334155"
+                            StrokeThickness="1"
+                            StrokeShape="RoundRectangle 8"
+                            Padding="8">
+                        <Editor Placeholder="Describe the safety concern..."
+                                PlaceholderColor="#64748B"
+                                TextColor="#F8FAFC"
+                                Text="{Binding ReportDescription}"
+                                HeightRequest="90"
+                                AutoSize="Disabled" />
+                    </Border>
+
+                    <!-- Error text if any -->
+                    <Label Text="{Binding ErrorMessage}"
+                           IsVisible="{Binding HasError}"
+                           TextColor="#F87171"
+                           FontSize="12" />
+
+                    <!-- Buttons Row -->
+                    <Button Text="File Priority Safety Report"
+                            Command="{Binding SubmitReportCommand}"
+                            BackgroundColor="#EF4444"
+                            TextColor="#FFFFFF"
+                            FontAttributes="Bold"
+                            CornerRadius="8"
+                            HeightRequest="40" />
+
+                    <Button Text="🚫 Block User Immediately"
+                            Command="{Binding BlockUserCommand}"
+                            BackgroundColor="#7F1D1D"
+                            TextColor="#FECACA"
+                            FontAttributes="Bold"
+                            CornerRadius="8"
+                            HeightRequest="38" />
+
+                    <Button Text="Cancel"
+                            Command="{Binding CloseReportCommand}"
+                            BackgroundColor="Transparent"
+                            TextColor="#94A3B8"
+                            CornerRadius="8"
+                            HeightRequest="36" />
+                </VerticalStackLayout>
+            </Border>
+        </Border>
     </Grid>
+
 </ContentPage>
