@@ -3,18 +3,19 @@
     x:Class="Roam.App.AppShell"
     xmlns="http://schemas.microsoft.com/dotnet/2021/maui"
     xmlns:x="http://schemas.microsoft.com/winfx/2009/xaml"
-    xmlns:local="clr-namespace:Roam.App"
     xmlns:views="clr-namespace:Roam.App.Views"
-    Title="Roam.App">
+    Title="Roam">
 
     <TabBar>
         <Tab Title="Home">
             <ShellContent
-                ContentTemplate="{DataTemplate local:MainPage}"
-                Route="MainPage" />
+                Title="Home"
+                ContentTemplate="{DataTemplate views:HomePage}"
+                Route="HomePage" />
         </Tab>
         <Tab Title="Live Session">
             <ShellContent
+                Title="Live Session"
                 ContentTemplate="{DataTemplate views:LiveSessionPage}"
                 Route="LiveSessionPage" />
         </Tab>

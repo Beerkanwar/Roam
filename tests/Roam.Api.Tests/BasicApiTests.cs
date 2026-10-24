@@ -20,4 +20,18 @@ public class BasicApiTests
 
         Assert.Equal("user@example.com", user.Email);
     }
+
+    [Fact]
+    public void ApplicationUser_InitializesWithDefaultValues()
+    {
+        var user = new ApplicationUser
+        {
+            Email = "volunteer@example.com",
+            DisplayName = "Explorer",
+            VolunteerStatus = VolunteerStatus.Approved
+        };
+
+        Assert.Equal("Explorer", user.DisplayName);
+        Assert.Equal(VolunteerStatus.Approved, user.VolunteerStatus);
+    }
 }

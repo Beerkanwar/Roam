@@ -1,0 +1,83 @@
+<?xml version="1.0" encoding="utf-8" ?>
+<ContentPage xmlns="http://schemas.microsoft.com/dotnet/2021/maui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2009/xaml"
+             xmlns:vm="clr-namespace:Roam.App.ViewModels"
+             x:Class="Roam.App.Views.RegisterPage"
+             x:DataType="vm:RegisterViewModel"
+             Title="{Binding Title}"
+             BackgroundColor="#F8FAFC">
+
+    <ScrollView>
+        <VerticalStackLayout Padding="24" Spacing="20" MaximumWidthRequest="460" HorizontalOptions="Center" VerticalOptions="Center">
+
+            <VerticalStackLayout Spacing="6" HorizontalOptions="Center">
+                <Label Text="Join Roam" FontSize="24" FontAttributes="Bold" TextColor="#0F172A" HorizontalOptions="Center" />
+                <Label Text="Create an account to explore or volunteer" FontSize="14" TextColor="#64748B" HorizontalOptions="Center" />
+            </VerticalStackLayout>
+
+            <Border StrokeThickness="1" Stroke="#E2E8F0" BackgroundColor="White" Padding="24" StrokeShape="RoundRectangle 12">
+                <VerticalStackLayout Spacing="14">
+
+                    <!-- Error Alert -->
+                    <Border StrokeThickness="1" Stroke="#FCA5A5" BackgroundColor="#FEF2F2" Padding="12" StrokeShape="RoundRectangle 8"
+                            IsVisible="{Binding HasError}">
+                        <Label Text="{Binding ErrorMessage}" TextColor="#B91C1C" FontSize="13" />
+                    </Border>
+
+                    <!-- Display Name -->
+                    <VerticalStackLayout Spacing="4">
+                        <Label Text="Full Name or Display Name" FontSize="13" FontAttributes="Bold" TextColor="#334155" />
+                        <Entry Placeholder="Jane Explorer" Text="{Binding DisplayName}" HeightRequest="44" />
+                    </VerticalStackLayout>
+
+                    <!-- Country -->
+                    <VerticalStackLayout Spacing="4">
+                        <Label Text="Country" FontSize="13" FontAttributes="Bold" TextColor="#334155" />
+                        <Entry Placeholder="United States" Text="{Binding Country}" HeightRequest="44" />
+                    </VerticalStackLayout>
+
+                    <!-- Date of Birth (18+ Safeguarding) -->
+                    <VerticalStackLayout Spacing="4">
+                        <HorizontalStackLayout Spacing="6">
+                            <Label Text="Date of Birth" FontSize="13" FontAttributes="Bold" TextColor="#334155" />
+                            <Label Text="(18+ Safeguarding Required)" FontSize="11" TextColor="#0284C7" FontAttributes="Italic" VerticalOptions="Center" />
+                        </HorizontalStackLayout>
+                        <DatePicker Date="{Binding DateOfBirth}" Format="yyyy-MM-dd" HeightRequest="44" />
+                    </VerticalStackLayout>
+
+                    <!-- Email -->
+                    <VerticalStackLayout Spacing="4">
+                        <Label Text="Email Address" FontSize="13" FontAttributes="Bold" TextColor="#334155" />
+                        <Entry Placeholder="jane@example.com" Text="{Binding Email}" Keyboard="Email" HeightRequest="44" />
+                    </VerticalStackLayout>
+
+                    <!-- Password -->
+                    <VerticalStackLayout Spacing="4">
+                        <Label Text="Password" FontSize="13" FontAttributes="Bold" TextColor="#334155" />
+                        <Entry Placeholder="••••••••" Text="{Binding Password}" IsPassword="True" HeightRequest="44" />
+                    </VerticalStackLayout>
+
+                    <!-- Confirm Password -->
+                    <VerticalStackLayout Spacing="4">
+                        <Label Text="Confirm Password" FontSize="13" FontAttributes="Bold" TextColor="#334155" />
+                        <Entry Placeholder="••••••••" Text="{Binding ConfirmPassword}" IsPassword="True" HeightRequest="44" />
+                    </VerticalStackLayout>
+
+                    <!-- Submit Button -->
+                    <Button Text="Create Account" Command="{Binding RegisterCommand}" 
+                            BackgroundColor="#0284C7" TextColor="White" FontAttributes="Bold" HeightRequest="46" CornerRadius="8" Margin="0,8,0,0" />
+
+                    <!-- Busy Indicator -->
+                    <ActivityIndicator IsRunning="{Binding IsBusy}" IsVisible="{Binding IsBusy}" Color="#0284C7" />
+
+                    <!-- Login Link -->
+                    <Button Text="Already have an account? Sign In" Command="{Binding NavigateToLoginCommand}"
+                            BackgroundColor="Transparent" TextColor="#0284C7" FontSize="13" />
+
+                </VerticalStackLayout>
+            </Border>
+
+        </VerticalStackLayout>
+    </ScrollView>
+
+</ContentPage>

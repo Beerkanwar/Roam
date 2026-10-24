@@ -39,6 +39,43 @@ public static class UserProfileEndpoints
         })
         .RequireAuthorization();
 
+        // Current user authenticated profile
+        group.MapGet("/me", async (ClaimsPrincipal user, ApplicationDbContext context, CancellationToken cancellationToken) =>
+        {
+            var userId = user.FindFirstValue(ClaimTypes.NameIdentifier);
+            if (string.IsNullOrEmpty(userId)) return Results.Unauthorized();
+
+            var appUser = await context.Users
+                .AsNoTracking()
+                .Include(u => u.VolunteerSettings)
+                .FirstOrDefaultAsync(u => u.Id == userId, cancellationToken);
+
+            if (appUser == null || appUser.AccountStatus != AccountStatus.Active)
+                return Results.NotFound();
+
+            return Results.Ok(new
+            {
+                appUser.Id,
+                appUser.Email,
+                appUser.DisplayName,
+                appUser.Country,
+                appUser.ProfilePhotoUrl,
+                appUser.VolunteerStatus,
+                appUser.AgeCategory,
+                VolunteerSettings = appUser.VolunteerSettings != null ? new
+                {
+                    appUser.VolunteerSettings.Enabled,
+                    appUser.VolunteerSettings.AvailableForRequests,
+                    appUser.VolunteerSettings.AcceptsPrivateTours,
+                    appUser.VolunteerSettings.AcceptsGroupTours,
+                    appUser.VolunteerSettings.MaxConcurrentViewers,
+                    appUser.VolunteerSettings.Languages,
+                    appUser.VolunteerSettings.TipEnabled
+                } : null
+            });
+        })
+        .RequireAuthorization();
+
         // Onboarding endpoint with 18+ safeguarding verification
         group.MapPost("/onboarding", async (ClaimsPrincipal user, [FromBody] OnboardingDto dto, ApplicationDbContext context, CancellationToken cancellationToken) =>
         {
