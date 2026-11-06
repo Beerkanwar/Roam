@@ -18,6 +18,7 @@ public class OsmGeocodingService : IGeocodingService
     public OsmGeocodingService(HttpClient httpClient, IConfiguration configuration)
     {
         _httpClient = httpClient;
+        _httpClient.Timeout = TimeSpan.FromSeconds(10);
         _endpoint = configuration["Geocoding:Endpoint"] ?? "https://nominatim.openstreetmap.org/search";
         _apiKey = configuration["Geocoding:ApiKey"];
 
@@ -62,13 +63,37 @@ public class OsmGeocodingService : IGeocodingService
                 url += $"&key={Uri.EscapeDataString(_apiKey)}";
             }
             
-            var response = await _httpClient.GetAsync(url, cancellationToken);
+            using var timeoutCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+            timeoutCts.CancelAfter(TimeSpan.FromSeconds(10));
+
+            HttpResponseMessage response;
+            try
+            {
+                response = await _httpClient.GetAsync(url, timeoutCts.Token);
+            }
+            catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
+            {
+                return Enumerable.Empty<GeocodingResult>();
+            }
+            catch (HttpRequestException)
+            {
+                return Enumerable.Empty<GeocodingResult>();
+            }
+
             _lastRequestTime = DateTime.UtcNow;
 
             if (!response.IsSuccessStatusCode)
                 return Enumerable.Empty<GeocodingResult>();
 
-            var content = await response.Content.ReadAsStringAsync(cancellationToken);
+            string content;
+            try
+            {
+                content = await response.Content.ReadAsStringAsync(timeoutCts.Token);
+            }
+            catch (Exception)
+            {
+                return Enumerable.Empty<GeocodingResult>();
+            }
             var document = JsonDocument.Parse(content);
 
             var results = new List<GeocodingResult>();

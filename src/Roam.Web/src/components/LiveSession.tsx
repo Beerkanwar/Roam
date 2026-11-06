@@ -2,6 +2,7 @@ import React, { useEffect, useState, useRef } from 'react';
 import * as signalR from '@microsoft/signalr';
 import PostSessionFeedbackModal from './PostSessionFeedbackModal';
 import ReportAndBlockModal from './ReportAndBlockModal';
+import { sanitizeMessageText } from '../utils/sanitize';
 
 interface LiveSessionProps {
     sessionId: string;
@@ -199,7 +200,12 @@ const LiveSession: React.FC<LiveSessionProps> = ({ sessionId, token, targetUserI
                     .build();
 
                 cConnection.on('ChatMessageReceived', (message: ChatMessage) => {
-                    setChatMessages(prev => [...prev, message]);
+                    const sanitizedMessage: ChatMessage = {
+                        ...message,
+                        text: sanitizeMessageText(message.text),
+                        senderName: sanitizeMessageText(message.senderName)
+                    };
+                    setChatMessages(prev => [...prev, sanitizedMessage]);
                     if (message.senderId) {
                         setCounterpartUserId(prev => prev || message.senderId);
                     }
@@ -339,7 +345,7 @@ const LiveSession: React.FC<LiveSessionProps> = ({ sessionId, token, targetUserI
                     </button>
                 </div>
 
-                <div style={{ backgroundColor: 'black', color: 'lime', padding: '10px', height: '150px', overflowY: 'auto', fontSize: '12px', fontFamily: 'monospace', borderRadius: '8px' }}>
+                <div style={{ backgroundColor: '#0b0f19', color: '#e5e7eb', padding: '10px', height: '150px', overflowY: 'auto', fontSize: '12px', fontFamily: 'monospace', borderRadius: '8px' }}>
                     {logs.map((item, index) => <div key={index}>{item}</div>)}
                 </div>
             </div>
@@ -353,8 +359,8 @@ const LiveSession: React.FC<LiveSessionProps> = ({ sessionId, token, targetUserI
                 <div style={{ flex: '1', padding: '15px', overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: '10px' }}>
                     {chatMessages.map(msg => (
                         <div key={msg.id} style={{ display: 'flex', flexDirection: 'column' }}>
-                            <span style={{ fontSize: '11px', color: '#666', fontWeight: 'bold' }}>{msg.senderName}</span>
-                            <span style={{ backgroundColor: '#fff', padding: '8px 12px', borderRadius: '12px', border: '1px solid #eee', marginTop: '2px' }}>{msg.text}</span>
+                            <span style={{ fontSize: '11px', color: '#666', fontWeight: 'bold' }}>{sanitizeMessageText(msg.senderName)}</span>
+                            <span style={{ backgroundColor: '#fff', padding: '8px 12px', borderRadius: '12px', border: '1px solid #eee', marginTop: '2px' }}>{sanitizeMessageText(msg.text)}</span>
                         </div>
                     ))}
                     {chatMessages.length === 0 && (

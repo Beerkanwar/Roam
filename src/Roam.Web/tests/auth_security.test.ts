@@ -1,5 +1,6 @@
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
+import { sanitizeMessageText } from '../src/utils/sanitize.ts';
 
 describe('Web Client Security & Quality Tests', () => {
   it('Tokens must be stored in sessionStorage, never in localStorage', () => {
@@ -25,10 +26,6 @@ describe('Web Client Security & Quality Tests', () => {
   });
 
   it('Chat messages must be sanitized against HTML injection and XSS vectors without double-encoding plain text', () => {
-    const sanitizeHtmlTags = (raw: string): string => {
-      return raw.replace(/<\/?[a-zA-Z!][^>]*>/g, '').trim();
-    };
-
     const xssPayloads = [
       '<script>alert("xss")</script>',
       '<img src=x onerror=alert(1)>',
@@ -37,7 +34,7 @@ describe('Web Client Security & Quality Tests', () => {
     ];
 
     for (const payload of xssPayloads) {
-      const sanitized = sanitizeHtmlTags(payload);
+      const sanitized = sanitizeMessageText(payload);
       assert.ok(!sanitized.includes('<script>'), `Payload ${payload} must not contain raw script tags`);
       assert.ok(!sanitized.includes('<img'), `Payload ${payload} must not contain raw img tags`);
       assert.ok(!sanitized.includes('<svg'), `Payload ${payload} must not contain raw svg tags`);
@@ -45,7 +42,7 @@ describe('Web Client Security & Quality Tests', () => {
 
     // Verify plain text with ampersand is preserved without double-encoding
     const plainText = 'Tom & Jerry: 1 < 2 and 5 > 3';
-    const preserved = sanitizeHtmlTags(plainText);
+    const preserved = sanitizeMessageText(plainText);
     assert.equal(preserved, 'Tom & Jerry: 1 < 2 and 5 > 3');
   });
 
