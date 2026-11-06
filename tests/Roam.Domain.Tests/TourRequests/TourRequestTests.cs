@@ -1,3 +1,4 @@
+using System;
 using Roam.Domain.TourRequests;
 using Xunit;
 
@@ -17,7 +18,7 @@ public class TourRequestTests
         };
 
         // Act
-        request.Status = TourRequestStatus.Accepted;
+        request.TransitionTo(TourRequestStatus.Accepted);
 
         // Assert
         Assert.Equal(TourRequestStatus.Accepted, request.Status);
@@ -31,15 +32,30 @@ public class TourRequestTests
         {
             PlaceId = "place-1",
             RequesterId = "user-1",
-            Status = TourRequestStatus.Draft
+            Status = TourRequestStatus.Published
         };
 
         // Act
-        request.Status = TourRequestStatus.Published;
+        request.TransitionTo(TourRequestStatus.Cancelled);
 
         // Assert
-        Assert.Equal(TourRequestStatus.Published, request.Status);
-        Assert.Equal("place-1", request.PlaceId);
-        Assert.Equal("user-1", request.RequesterId);
+        Assert.Equal(TourRequestStatus.Cancelled, request.Status);
+    }
+
+    [Fact]
+    public void TransitionTo_WhenIllegalTransition_ThrowsInvalidOperationException()
+    {
+        // Arrange
+        var request = new TourRequest
+        {
+            PlaceId = "place-1",
+            RequesterId = "user-1",
+            Status = TourRequestStatus.Draft
+        };
+
+        // Act & Assert
+        Assert.False(request.CanTransitionTo(TourRequestStatus.Completed));
+        var ex = Assert.Throws<InvalidOperationException>(() => request.TransitionTo(TourRequestStatus.Completed));
+        Assert.Contains("Cannot transition from Draft to Completed", ex.Message);
     }
 }

@@ -28,6 +28,12 @@ public class TourRequestService : ITourRequestService
 
     public async Task<TourRequest> CreateRequestAsync(CreateTourRequestDto dto, CancellationToken cancellationToken = default)
     {
+        var requester = await _context.Users.FindAsync(new object[] { dto.RequesterId }, cancellationToken);
+        if (requester == null || requester.AgeCategory != Roam.Domain.Users.AgeCategory.Adult)
+        {
+            throw new UnauthorizedAccessException("Only age-verified adult users (18+) can create tour requests.");
+        }
+
         var placeExists = await _context.Places.AnyAsync(p => p.Id == dto.PlaceId, cancellationToken);
         if (!placeExists)
             throw new ArgumentException("The specified place was not found.", nameof(dto.PlaceId));
@@ -57,6 +63,12 @@ public class TourRequestService : ITourRequestService
 
     public async Task<TourRequest> CreateRequestByCoordinatesAsync(CreateTourRequestByCoordinatesDto dto, CancellationToken cancellationToken = default)
     {
+        var requester = await _context.Users.FindAsync(new object[] { dto.RequesterId }, cancellationToken);
+        if (requester == null || requester.AgeCategory != Roam.Domain.Users.AgeCategory.Adult)
+        {
+            throw new UnauthorizedAccessException("Only age-verified adult users (18+) can create tour requests.");
+        }
+
         if (!dto.Validate(out var validationError))
             throw new ArgumentException(validationError, nameof(dto));
 

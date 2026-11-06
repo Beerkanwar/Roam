@@ -37,6 +37,10 @@ public static class TourRequestEndpoints
                 var request = await service.CreateRequestAsync(dto, cancellationToken);
                 return Results.Created($"/api/v1/tour-requests/{request.Id}", ToDto(request));
             }
+            catch (UnauthorizedAccessException ex)
+            {
+                return Results.Problem(ex.Message, statusCode: StatusCodes.Status403Forbidden);
+            }
             catch (ArgumentException ex)
             {
                 return Results.BadRequest(new { error = ex.Message });
@@ -68,6 +72,10 @@ public static class TourRequestEndpoints
             {
                 var request = await service.CreateRequestByCoordinatesAsync(dto, cancellationToken);
                 return Results.Created($"/api/v1/tour-requests/{request.Id}", ToDto(request));
+            }
+            catch (UnauthorizedAccessException ex)
+            {
+                return Results.Problem(ex.Message, statusCode: StatusCodes.Status403Forbidden);
             }
             catch (ArgumentException ex)
             {

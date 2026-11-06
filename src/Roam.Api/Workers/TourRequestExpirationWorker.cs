@@ -87,6 +87,7 @@ public class TourRequestExpirationWorker : BackgroundService
 
                 if (staleSessions.Count > 0)
                 {
+                    var notificationService = scope.ServiceProvider.GetRequiredService<Roam.Application.TourRequests.ITourNotificationService>();
                     foreach (var session in staleSessions)
                     {
                         session.Status = Roam.Domain.TourSessions.SessionStatus.Completed;
@@ -94,9 +95,18 @@ public class TourRequestExpirationWorker : BackgroundService
                         session.EndReason = "Session timed out after max duration";
 
                         var tourReq = await dbContext.TourRequests.FindAsync(new object[] { session.TourRequestId }, stoppingToken);
-                        if (tourReq != null && tourReq.Status == TourRequestStatus.Active)
+                        if (tourReq != null && tourReq.CanTransitionTo(TourRequestStatus.Completed))
                         {
-                            tourReq.Status = TourRequestStatus.Completed;
+                            tourReq.TransitionTo(TourRequestStatus.Completed);
+                        }
+
+                        try
+                        {
+                            await notificationService.TourEndedAsync(session.Id, session.HostVolunteerId, tourReq?.RequesterId ?? string.Empty);
+                        }
+                        catch (Exception notifyEx)
+                        {
+                            _logger.LogWarning(notifyEx, "Failed to send tour ended notification for timed out session {SessionId}", session.Id);
                         }
                     }
 

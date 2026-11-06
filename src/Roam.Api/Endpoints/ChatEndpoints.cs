@@ -32,9 +32,11 @@ public static class ChatEndpoints
                 return Results.Unauthorized();
             }
 
+            var safeLimit = Math.Clamp(limit, 1, 100);
+
             try
             {
-                var history = await chatService.GetSessionChatHistoryAsync(sessionId, userId, before, limit, cancellationToken);
+                var history = await chatService.GetSessionChatHistoryAsync(sessionId, userId, before, safeLimit, cancellationToken);
                 return Results.Ok(history);
             }
             catch (System.UnauthorizedAccessException)

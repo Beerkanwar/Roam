@@ -4,6 +4,7 @@ using System.Text;
 using System.Text.Json;
 using System.Threading.Tasks;
 using Microsoft.Maui.Storage;
+using Roam.Contracts.Users;
 
 namespace Roam.App.Services;
 
@@ -21,8 +22,8 @@ public class AuthService : IAuthService
     public string? CurrentUserId { get; private set; }
     public string? CurrentUserEmail { get; private set; }
     public string? CurrentDisplayName { get; private set; }
-    public int VolunteerStatus { get; private set; }
-    public bool IsVolunteer => VolunteerStatus == 2; // Approved = 2
+    public VolunteerStatus VolunteerStatus { get; private set; } = VolunteerStatus.None;
+    public bool IsVolunteer => VolunteerStatus == VolunteerStatus.Approved;
 
     public event Action? AuthStateChanged;
 
@@ -119,11 +120,12 @@ public class AuthService : IAuthService
             };
 
             var onboardingSuccess = await _apiClient.PostAsync("/api/v1/profile/onboarding", onboardingPayload, requireAuth: true);
-            if (onboardingSuccess)
+            if (!onboardingSuccess)
             {
-                await FetchUserProfileAsync();
+                return (false, "Safeguarding age verification failed. You must be at least 18 years old to complete registration.");
             }
 
+            await FetchUserProfileAsync();
             return (true, null);
         }
         catch (Exception ex)
@@ -177,7 +179,7 @@ public class AuthService : IAuthService
         CurrentUserId = null;
         CurrentUserEmail = null;
         CurrentDisplayName = null;
-        VolunteerStatus = 0;
+        VolunteerStatus = VolunteerStatus.None;
 
         RemoveSecureValue(AccessTokenKey);
         RemoveSecureValue(RefreshTokenKey);
@@ -219,32 +221,18 @@ public class AuthService : IAuthService
         }
         catch
         {
-            return Preferences.Default.Get(key, (string?)null);
+            return null;
         }
     }
 
     private static async Task SetSecureValueAsync(string key, string value)
     {
-        try
-        {
-            await SecureStorage.Default.SetAsync(key, value);
-        }
-        catch
-        {
-            Preferences.Default.Set(key, value);
-        }
+        await SecureStorage.Default.SetAsync(key, value);
     }
 
     private static void RemoveSecureValue(string key)
     {
-        try
-        {
-            SecureStorage.Default.Remove(key);
-        }
-        catch
-        {
-            Preferences.Default.Remove(key);
-        }
+        SecureStorage.Default.Remove(key);
     }
 
     private class LoginResponse
@@ -261,6 +249,6 @@ public class AuthService : IAuthService
         public string? Email { get; set; }
         public string? DisplayName { get; set; }
         public string? Country { get; set; }
-        public int VolunteerStatus { get; set; }
+        public VolunteerStatus VolunteerStatus { get; set; }
     }
 }

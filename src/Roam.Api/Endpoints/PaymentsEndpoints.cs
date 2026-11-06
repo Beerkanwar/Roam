@@ -54,18 +54,33 @@ public static class PaymentsEndpoints
         group.MapPost("/tips/{id}/settle", async (
             string id,
             [FromQuery] bool succeeded,
-            Roam.Infrastructure.Persistence.ApplicationDbContext dbContext) =>
+            [FromServices] IPaymentService paymentService,
+            ClaimsPrincipal user,
+            CancellationToken cancellationToken) =>
         {
-            var tip = await dbContext.TipTransactions.FindAsync(id);
-            if (tip == null) return Results.NotFound();
+            var callerId = user.FindFirstValue(ClaimTypes.NameIdentifier);
+            if (string.IsNullOrEmpty(callerId))
+                return Results.Unauthorized();
 
-            if (succeeded)
-                tip.MarkCompleted();
-            else
-                tip.MarkFailed();
+            var isAdmin = user.IsInRole("Admin");
 
-            await dbContext.SaveChangesAsync();
-            return Results.Ok(new { tip.Id, Status = tip.Status.ToString() });
+            try
+            {
+                var tip = await paymentService.SettleTipAsync(id, callerId, isAdmin, succeeded, cancellationToken);
+                return Results.Ok(new { tip.Id, Status = tip.Status.ToString() });
+            }
+            catch (System.Collections.Generic.KeyNotFoundException)
+            {
+                return Results.NotFound(new { error = $"Tip transaction '{id}' was not found." });
+            }
+            catch (UnauthorizedAccessException ex)
+            {
+                return Results.Problem(ex.Message, statusCode: StatusCodes.Status403Forbidden);
+            }
+            catch (InvalidOperationException ex)
+            {
+                return Results.Conflict(new { error = ex.Message });
+            }
         })
         .WithName("SettleTip")
         .WithSummary("Settle a tip transaction upon PSP confirmation");

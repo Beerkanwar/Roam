@@ -31,6 +31,17 @@ public class Donation
 
     public void MarkCompleted()
     {
+        if (Status != PaymentStatus.Pending)
+            throw new InvalidOperationException($"Cannot complete donation in {Status} status. Only Pending donations can be completed.");
+
         Status = PaymentStatus.Completed;
+    }
+
+    public void MarkFailed()
+    {
+        if (Status != PaymentStatus.Pending)
+            throw new InvalidOperationException($"Cannot fail donation in {Status} status. Only Pending donations can be marked failed.");
+
+        Status = PaymentStatus.Failed;
     }
 }

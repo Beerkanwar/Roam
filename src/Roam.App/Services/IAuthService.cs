@@ -1,5 +1,6 @@
 using System;
 using System.Threading.Tasks;
+using Roam.Contracts.Users;
 
 namespace Roam.App.Services;
 
@@ -9,7 +10,7 @@ public interface IAuthService
     string? CurrentUserId { get; }
     string? CurrentUserEmail { get; }
     string? CurrentDisplayName { get; }
-    int VolunteerStatus { get; }
+    VolunteerStatus VolunteerStatus { get; }
     bool IsVolunteer { get; }
 
     event Action? AuthStateChanged;

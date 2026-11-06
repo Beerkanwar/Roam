@@ -17,8 +17,8 @@ interface Place {
 const API_BASE = import.meta.env.VITE_API_BASE_URL || 'https://localhost:7217';
 
 export function App() {
-  const [token, setToken] = useState<string>(() => localStorage.getItem('roam_token') || '');
-  const [refreshToken, setRefreshToken] = useState<string>(() => localStorage.getItem('roam_refresh_token') || '');
+  const [token, setToken] = useState<string>(() => sessionStorage.getItem('roam_token') || '');
+  const [refreshToken, setRefreshToken] = useState<string>(() => sessionStorage.getItem('roam_refresh_token') || '');
   const [authEmail, setAuthEmail] = useState('');
   const [authPassword, setAuthPassword] = useState('');
   const [isRegistering, setIsRegistering] = useState(false);
@@ -50,20 +50,24 @@ export function App() {
   const [joinSessionInput, setJoinSessionInput] = useState('');
   const [incomingSessionAlert, setIncomingSessionAlert] = useState<{ sessionId: string; message: string } | null>(null);
 
-  // Save auth tokens
+  // Save auth tokens in sessionStorage (avoid long-lived persistent localStorage)
   useEffect(() => {
+    // Purge legacy tokens from localStorage if present
+    localStorage.removeItem('roam_token');
+    localStorage.removeItem('roam_refresh_token');
+
     if (token) {
-      localStorage.setItem('roam_token', token);
+      sessionStorage.setItem('roam_token', token);
     } else {
-      localStorage.removeItem('roam_token');
+      sessionStorage.removeItem('roam_token');
     }
   }, [token]);
 
   useEffect(() => {
     if (refreshToken) {
-      localStorage.setItem('roam_refresh_token', refreshToken);
+      sessionStorage.setItem('roam_refresh_token', refreshToken);
     } else {
-      localStorage.removeItem('roam_refresh_token');
+      sessionStorage.removeItem('roam_refresh_token');
     }
   }, [refreshToken]);
 
@@ -71,13 +75,15 @@ export function App() {
     setToken('');
     setRefreshToken('');
     setUserProfile(null);
+    sessionStorage.removeItem('roam_token');
+    sessionStorage.removeItem('roam_refresh_token');
     localStorage.removeItem('roam_token');
     localStorage.removeItem('roam_refresh_token');
     setActiveSessionId(null);
   }, []);
 
   const refreshAuthToken = useCallback(async (): Promise<string | null> => {
-    const currentRefresh = refreshToken || localStorage.getItem('roam_refresh_token');
+    const currentRefresh = refreshToken || sessionStorage.getItem('roam_refresh_token');
     if (!currentRefresh) {
       handleLogout();
       return null;
@@ -94,11 +100,11 @@ export function App() {
         const newRefresh = data.refreshToken;
         if (newToken) {
           setToken(newToken);
-          localStorage.setItem('roam_token', newToken);
+          sessionStorage.setItem('roam_token', newToken);
         }
         if (newRefresh) {
           setRefreshToken(newRefresh);
-          localStorage.setItem('roam_refresh_token', newRefresh);
+          sessionStorage.setItem('roam_refresh_token', newRefresh);
         }
         return newToken || null;
       } else {
@@ -117,7 +123,7 @@ export function App() {
       headers.set('Authorization', `Bearer ${token}`);
     }
     let response = await fetch(url, { ...options, headers });
-    if (response.status === 401 && (refreshToken || localStorage.getItem('roam_refresh_token'))) {
+    if (response.status === 401 && (refreshToken || sessionStorage.getItem('roam_refresh_token'))) {
       const newToken = await refreshAuthToken();
       if (newToken) {
         headers.set('Authorization', `Bearer ${newToken}`);

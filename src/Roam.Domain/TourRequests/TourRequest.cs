@@ -30,9 +30,9 @@ public class TourRequest
     // Navigation properties (if needed by EF)
     public Place? Place { get; set; }
 
-    public void TransitionTo(TourRequestStatus targetState)
+    public bool CanTransitionTo(TourRequestStatus targetState)
     {
-        bool valid = targetState switch
+        return targetState switch
         {
             TourRequestStatus.Published => Status == TourRequestStatus.Draft,
             TourRequestStatus.VolunteerInterested => Status == TourRequestStatus.Published || Status == TourRequestStatus.Matching,
@@ -45,8 +45,11 @@ public class TourRequest
             TourRequestStatus.Expired => Status == TourRequestStatus.Published || Status == TourRequestStatus.Matching || Status == TourRequestStatus.VolunteerInterested,
             _ => false
         };
+    }
 
-        if (!valid)
+    public void TransitionTo(TourRequestStatus targetState)
+    {
+        if (!CanTransitionTo(targetState))
             throw new InvalidOperationException($"Cannot transition from {Status} to {targetState}");
 
         Status = targetState;

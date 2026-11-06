@@ -50,7 +50,7 @@ public static class DatabaseSeeder
                     }
                 }
             }
-            // Safeguard C2: Never auto-promote pre-existing accounts to Admin at restart
+            // Safeguard: Never auto-promote pre-existing accounts to Admin at restart
         }
 
         // 3. Auto-approve specified volunteer emails only if already email-confirmed
@@ -61,7 +61,7 @@ public static class DatabaseSeeder
             foreach (var email in emails)
             {
                 var volUser = await userManager.FindByEmailAsync(email);
-                // Safeguard C2: Only approve volunteer status if the user's email has already been verified
+                // Safeguard: Only approve volunteer status if the user's email has already been verified
                 if (volUser != null && volUser.EmailConfirmed && volUser.VolunteerStatus != VolunteerStatus.Approved)
                 {
                     volUser.VolunteerStatus = VolunteerStatus.Approved;

@@ -10,7 +10,8 @@ public class PaymentServiceValidationTests
     [Theory]
     [InlineData(0)]
     [InlineData(-10)]
-    public async Task SubmitTipAsync_ThrowsArgumentException_WhenAmountNotPositive(decimal amount)
+    [InlineData(1000.01)]
+    public async Task SubmitTipAsync_ThrowsArgumentException_WhenAmountNotPositiveOrExceedsMax(decimal amount)
     {
         var ex = await Assert.ThrowsAsync<ArgumentException>(() =>
             _service.SubmitTipAsync("sender-1", "receiver-1", amount, "USD", null));
@@ -43,7 +44,8 @@ public class PaymentServiceValidationTests
     [Theory]
     [InlineData(0)]
     [InlineData(-5)]
-    public async Task SubmitDonationAsync_ThrowsArgumentException_WhenAmountNotPositive(decimal amount)
+    [InlineData(1000.01)]
+    public async Task SubmitDonationAsync_ThrowsArgumentException_WhenAmountNotPositiveOrExceedsMax(decimal amount)
     {
         var ex = await Assert.ThrowsAsync<ArgumentException>(() =>
             _service.SubmitDonationAsync(amount, "USD", "donor-1"));

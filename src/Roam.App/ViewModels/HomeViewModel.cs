@@ -1,5 +1,6 @@
 using System.Windows.Input;
 using Roam.App.Services;
+using Roam.Contracts.Users;
 
 namespace Roam.App.ViewModels;
 
@@ -19,10 +20,9 @@ public class HomeViewModel : BaseViewModel
 
     public string VolunteerStatusText => _authService.VolunteerStatus switch
     {
-        1 => "Application Pending",
-        2 => "Approved Volunteer",
-        3 => "Application Declined",
-        4 => "Status Revoked",
+        VolunteerStatus.Pending => "Application Pending",
+        VolunteerStatus.Approved => "Approved Volunteer",
+        VolunteerStatus.Revoked => "Status Revoked",
         _ => "Not Registered"
     };
 

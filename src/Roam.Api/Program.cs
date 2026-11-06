@@ -57,8 +57,8 @@ builder.Services.AddIdentityApiEndpoints<ApplicationUser>(options =>
 .AddEntityFrameworkStores<ApplicationDbContext>()
 .AddClaimsPrincipalFactory<Roam.Infrastructure.Identity.ApplicationUserClaimsPrincipalFactory>();
 
-// Identity Email Sender (M19)
-builder.Services.AddTransient<IEmailSender<ApplicationUser>, Roam.Api.Services.LoggingEmailSender>();
+// Identity Email Sender
+builder.Services.AddTransient<IEmailSender<ApplicationUser>, Roam.Api.Services.SmtpEmailSender>();
 
 // Data Protection Keys Persistence
 var keysFolder = Environment.GetEnvironmentVariable("DATA_PROTECTION_KEYS_PATH") 
@@ -112,8 +112,11 @@ builder.Services.AddRateLimiter(options =>
 // Problem Details
 builder.Services.AddProblemDetails();
 
-// Add Places Services
-builder.Services.AddHttpClient<IGeocodingService, OsmGeocodingService>();
+// Add Places Services with configured timeout
+builder.Services.AddHttpClient<IGeocodingService, OsmGeocodingService>(client =>
+{
+    client.Timeout = TimeSpan.FromSeconds(10);
+});
 builder.Services.AddScoped<IPlaceService, PlaceService>();
 builder.Services.AddScoped<ITourRequestService, TourRequestService>();
 builder.Services.AddHostedService<TourRequestExpirationWorker>();
@@ -187,14 +190,17 @@ app.UseStatusCodePages();
 
 app.UseCors();
 
-// SignalR access_token query string authentication support
+// SignalR access_token query string authentication support (respect existing Authorization header)
 app.Use(async (context, next) =>
 {
-    var accessToken = context.Request.Query["access_token"];
-    var path = context.Request.Path;
-    if (!string.IsNullOrEmpty(accessToken) && path.StartsWithSegments("/hubs"))
+    if (string.IsNullOrEmpty(context.Request.Headers.Authorization))
     {
-        context.Request.Headers.Append("Authorization", $"Bearer {accessToken}");
+        var accessToken = context.Request.Query["access_token"];
+        var path = context.Request.Path;
+        if (!string.IsNullOrEmpty(accessToken) && path.StartsWithSegments("/hubs"))
+        {
+            context.Request.Headers.Append("Authorization", $"Bearer {accessToken}");
+        }
     }
     await next();
 });
@@ -204,7 +210,10 @@ app.UseRateLimiter();
 app.UseMiddleware<AccountStatusMiddleware>();
 app.UseAuthorization();
 
-app.UseSerilogRequestLogging();
+app.UseSerilogRequestLogging(options =>
+{
+    options.MessageTemplate = "HTTP {RequestMethod} {RequestPath} responded {StatusCode} in {Elapsed:0.0000} ms";
+});
 
 if (app.Environment.IsDevelopment()) 
 {

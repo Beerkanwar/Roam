@@ -68,8 +68,18 @@ public class PlaceService : IPlaceService
 
         if (newPlaces.Count > 0)
         {
-            _context.Places.AddRange(newPlaces);
-            await _context.SaveChangesAsync(cancellationToken);
+            var placesToInsert = newPlaces.Take(5).ToList();
+            try
+            {
+                await using var transaction = await _context.Database.BeginTransactionAsync(cancellationToken);
+                _context.Places.AddRange(placesToInsert);
+                await _context.SaveChangesAsync(cancellationToken);
+                await transaction.CommitAsync(cancellationToken);
+            }
+            catch
+            {
+                // Gracefully degrade: do not fail read-search if persisting external place fails
+            }
         }
 
         // Merge local, existing geocoded matches, and newly added places, deduplicated by Id

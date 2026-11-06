@@ -4,6 +4,7 @@ using System.Threading.Tasks;
 using System.Windows.Input;
 using Roam.App.Models;
 using Roam.App.Services;
+using Roam.Contracts.Users;
 
 namespace Roam.App.ViewModels;
 
@@ -33,10 +34,9 @@ public class VolunteerDashboardViewModel : BaseViewModel
 
     public string VolunteerStatusText => _authService.VolunteerStatus switch
     {
-        1 => "Application Pending Approval",
-        2 => "Verified Active Volunteer",
-        3 => "Application Declined",
-        4 => "Privileges Revoked",
+        VolunteerStatus.Pending => "Application Pending Approval",
+        VolunteerStatus.Approved => "Verified Active Volunteer",
+        VolunteerStatus.Revoked => "Privileges Revoked",
         _ => "Not Registered as Volunteer"
     };
 

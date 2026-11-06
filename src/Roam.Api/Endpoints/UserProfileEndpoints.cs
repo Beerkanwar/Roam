@@ -290,13 +290,15 @@ public static class UserProfileEndpoints
             var appUser = await context.Users.FirstOrDefaultAsync(u => u.Id == userId, cancellationToken);
             if (appUser == null) return Results.NotFound();
 
-            if (!string.IsNullOrEmpty(dto?.Password))
+            if (string.IsNullOrWhiteSpace(dto?.Password))
             {
-                var isPasswordValid = await userManager.CheckPasswordAsync(appUser, dto.Password);
-                if (!isPasswordValid)
-                {
-                    return Results.BadRequest(new { error = "Invalid password for account deletion." });
-                }
+                return Results.BadRequest(new { error = "Password confirmation is required for account deletion." });
+            }
+
+            var isPasswordValid = await userManager.CheckPasswordAsync(appUser, dto.Password);
+            if (!isPasswordValid)
+            {
+                return Results.BadRequest(new { error = "Invalid password for account deletion." });
             }
 
             // Anonymize personal details

@@ -47,7 +47,7 @@ const LiveSession: React.FC<LiveSessionProps> = ({ sessionId, token, targetUserI
 
     const log = (msg: string) => setLogs(prev => [...prev, msg]);
 
-    const authToken = token || localStorage.getItem('roam_token') || '';
+    const authToken = token || sessionStorage.getItem('roam_token') || '';
 
     // Initialize WebRTC and SignalR
     useEffect(() => {

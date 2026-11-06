@@ -100,9 +100,7 @@ export const UserProfileModal: React.FC<UserProfileModalProps> = ({
       case 2:
         return <span style={{ color: '#10b981', fontWeight: 600 }}>Verified Active Volunteer</span>;
       case 3:
-        return <span style={{ color: '#ef4444', fontWeight: 600 }}>Application Declined</span>;
-      case 4:
-        return <span style={{ color: '#f87171', fontWeight: 600 }}>Status Revoked</span>;
+        return <span style={{ color: '#ef4444', fontWeight: 600 }}>Status Revoked</span>;
       default:
         return <span style={{ color: '#94a3b8' }}>Not Registered</span>;
     }

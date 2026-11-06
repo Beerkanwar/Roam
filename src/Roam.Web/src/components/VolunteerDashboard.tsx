@@ -32,6 +32,15 @@ export const VolunteerDashboard: React.FC<VolunteerDashboardProps> = ({
   onApplyVolunteer,
 }) => {
   const [availableForRequests, setAvailableForRequests] = useState<boolean>(true);
+  const [volunteerSettings, setVolunteerSettings] = useState<{
+    enabled?: boolean;
+    availableForRequests?: boolean;
+    acceptsPrivateTours?: boolean;
+    acceptsGroupTours?: boolean;
+    maxConcurrentViewers?: number;
+    languages?: string;
+    tipEnabled?: boolean;
+  } | null>(null);
   const [radiusKm, setRadiusKm] = useState<number>(10);
   const [gpsLocation, setGpsLocation] = useState<{ lat: number; lng: number } | null>(null);
   const [gpsStatus, setGpsStatus] = useState<string>('Location not synced');
@@ -39,6 +48,29 @@ export const VolunteerDashboard: React.FC<VolunteerDashboardProps> = ({
   const [loadingRequests, setLoadingRequests] = useState<boolean>(false);
   const [actionError, setActionError] = useState<string>('');
   const [actionSuccess, setActionSuccess] = useState<string>('');
+
+  // Load existing volunteer settings on mount
+  useEffect(() => {
+    let ignore = false;
+    const fetchSettings = async () => {
+      try {
+        const response = await authFetch(`${apiBase}/api/v1/profile/me`);
+        if (response.ok && !ignore) {
+          const data = await response.json();
+          if (data?.volunteerSettings) {
+            setVolunteerSettings(data.volunteerSettings);
+            if (typeof data.volunteerSettings.availableForRequests === 'boolean') {
+              setAvailableForRequests(data.volunteerSettings.availableForRequests);
+            }
+          }
+        }
+      } catch (err) {
+        console.error('Failed to load volunteer settings:', err);
+      }
+    };
+    fetchSettings();
+    return () => { ignore = true; };
+  }, [apiBase, authFetch]);
 
   // 1. Sync GPS location to backend
   const syncLocation = useCallback(async (lat: number, lng: number) => {
@@ -78,18 +110,19 @@ export const VolunteerDashboard: React.FC<VolunteerDashboardProps> = ({
     );
   }, [syncLocation]);
 
-  // 2. Toggle volunteer availability
+  // 2. Toggle volunteer availability (preserving existing user settings)
   const handleToggleAvailability = async (newVal: boolean) => {
     try {
       setAvailableForRequests(newVal);
+      const current = volunteerSettings || {};
       const payload = {
-        enabled: true,
+        enabled: current.enabled ?? true,
         availableForRequests: newVal,
-        acceptsPrivateTours: true,
-        acceptsGroupTours: true,
-        maxConcurrentViewers: 10,
-        languages: 'English',
-        tipEnabled: false,
+        acceptsPrivateTours: current.acceptsPrivateTours ?? true,
+        acceptsGroupTours: current.acceptsGroupTours ?? true,
+        maxConcurrentViewers: current.maxConcurrentViewers ?? 10,
+        languages: current.languages ?? 'English',
+        tipEnabled: current.tipEnabled ?? false,
       };
       const response = await authFetch(`${apiBase}/api/v1/profile/volunteer-settings`, {
         method: 'PUT',
@@ -100,6 +133,7 @@ export const VolunteerDashboard: React.FC<VolunteerDashboardProps> = ({
         setAvailableForRequests(!newVal);
         setActionError('Failed to update availability status.');
       } else {
+        setVolunteerSettings(payload);
         setActionError('');
       }
     } catch (err) {

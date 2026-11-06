@@ -21,6 +21,7 @@ export const ReportAndBlockModal: React.FC<ReportAndBlockModalProps> = ({
 }) => {
   const [activeTab, setActiveTab] = useState<'report' | 'block'>('report');
   const [reason, setReason] = useState<number>(0); // 0 = Harassment
+  const [severity, setSeverity] = useState<number>(1); // 0 = Low, 1 = Medium, 2 = High, 3 = Critical
   const [description, setDescription] = useState<string>('');
   const [submitting, setSubmitting] = useState<boolean>(false);
   const [statusMessage, setStatusMessage] = useState<string>('');
@@ -36,6 +37,13 @@ export const ReportAndBlockModal: React.FC<ReportAndBlockModalProps> = ({
     { value: 6, label: 'Spam or Fraud' },
     { value: 7, label: 'Immediate Safety Concern' },
     { value: 8, label: 'Other Safety Violation' },
+  ];
+
+  const reportSeverities = [
+    { value: 0, label: 'Low — Minor inconvenience or spam' },
+    { value: 1, label: 'Medium — Policy violation or inappropriate conduct' },
+    { value: 2, label: 'High — Abusive behavior or harassment' },
+    { value: 3, label: 'Critical — Immediate danger or illegal activity' },
   ];
 
   const handleReportSubmit = async (e: React.FormEvent) => {
@@ -58,7 +66,7 @@ export const ReportAndBlockModal: React.FC<ReportAndBlockModalProps> = ({
           tourSessionId: tourSessionId || undefined,
           reason,
           description: description.trim(),
-          severity: 1, // Medium
+          severity,
         }),
       });
 
@@ -227,6 +235,26 @@ export const ReportAndBlockModal: React.FC<ReportAndBlockModalProps> = ({
               >
                 {reportReasons.map(r => (
                   <option key={r.value} value={r.value}>{r.label}</option>
+                ))}
+              </select>
+            </div>
+
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+              <label style={{ fontSize: '0.78rem', color: '#94a3b8' }}>Report Severity:</label>
+              <select
+                value={severity}
+                onChange={(e) => setSeverity(Number(e.target.value))}
+                style={{
+                  padding: '9px 12px',
+                  backgroundColor: '#1e293b',
+                  border: '1px solid #334155',
+                  borderRadius: '8px',
+                  color: '#f8fafc',
+                  fontSize: '0.85rem',
+                }}
+              >
+                {reportSeverities.map(s => (
+                  <option key={s.value} value={s.value}>{s.label}</option>
                 ))}
               </select>
             </div>

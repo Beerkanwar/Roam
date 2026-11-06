@@ -90,7 +90,17 @@ public class PaymentService : IPaymentService
             var existing = await _context.TipTransactions
                 .FirstOrDefaultAsync(t => t.SenderId == senderId && t.IdempotencyKey == idempotencyKey);
             if (existing != null)
+            {
+                if (existing.Amount != amount ||
+                    !string.Equals(existing.Currency, currency, StringComparison.OrdinalIgnoreCase) ||
+                    existing.ReceiverId != receiverId ||
+                    existing.TourSessionId != tourSessionId)
+                {
+                    throw new InvalidOperationException("Idempotency key was previously used with different tip request parameters.");
+                }
+
                 return existing;
+            }
         }
 
         var tip = new TipTransaction(senderId, receiverId, amount, currency.ToUpperInvariant(), tourSessionId, idempotencyKey);
@@ -116,7 +126,15 @@ public class PaymentService : IPaymentService
             var existing = await _context.Donations
                 .FirstOrDefaultAsync(d => d.DonorId == donorId && d.IdempotencyKey == idempotencyKey);
             if (existing != null)
+            {
+                if (existing.Amount != amount ||
+                    !string.Equals(existing.Currency, currency, StringComparison.OrdinalIgnoreCase))
+                {
+                    throw new InvalidOperationException("Idempotency key was previously used with different donation request parameters.");
+                }
+
                 return existing;
+            }
         }
 
         var donation = new Donation(amount, currency.ToUpperInvariant(), donorId, idempotencyKey);
@@ -126,5 +144,26 @@ public class PaymentService : IPaymentService
         await _context.SaveChangesAsync();
         
         return donation;
+    }
+
+    public async Task<TipTransaction> SettleTipAsync(string tipId, string callerId, bool isAdmin, bool succeeded, CancellationToken cancellationToken = default)
+    {
+        var tip = await _context.TipTransactions.FirstOrDefaultAsync(t => t.Id == tipId, cancellationToken);
+        if (tip == null)
+            throw new KeyNotFoundException($"Tip transaction '{tipId}' was not found.");
+
+        if (tip.ReceiverId != callerId && tip.SenderId != callerId && !isAdmin)
+            throw new UnauthorizedAccessException("Only the tip participants or an administrator may settle this tip transaction.");
+
+        if (tip.Status != PaymentStatus.Pending)
+            throw new InvalidOperationException($"Cannot settle tip transaction with status '{tip.Status}'. Only Pending tips can be settled.");
+
+        if (succeeded)
+            tip.MarkCompleted();
+        else
+            tip.MarkFailed();
+
+        await _context.SaveChangesAsync(cancellationToken);
+        return tip;
     }
 }

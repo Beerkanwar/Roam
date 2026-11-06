@@ -3,6 +3,7 @@ WORKDIR /app
 EXPOSE 8080
 ENV ASPNETCORE_HTTP_PORTS=8080
 RUN apt-get update && apt-get install -y --no-install-recommends curl && rm -rf /var/lib/apt/lists/*
+ARG APP_UID=1654
 RUN mkdir -p /app/keys && chown -R $APP_UID:$APP_UID /app/keys
 USER $APP_UID
 

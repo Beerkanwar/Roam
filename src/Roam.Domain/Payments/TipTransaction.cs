@@ -37,11 +37,17 @@ public class TipTransaction
 
     public void MarkCompleted()
     {
+        if (Status != PaymentStatus.Pending)
+            throw new InvalidOperationException($"Cannot complete tip transaction in {Status} status. Only Pending tips can be completed.");
+
         Status = PaymentStatus.Completed;
     }
 
     public void MarkFailed()
     {
+        if (Status != PaymentStatus.Pending)
+            throw new InvalidOperationException($"Cannot fail tip transaction in {Status} status. Only Pending tips can be marked failed.");
+
         Status = PaymentStatus.Failed;
     }
 }

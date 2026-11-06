@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Text.RegularExpressions;
 using System.Threading;
 using System.Threading.Tasks;
 using Microsoft.EntityFrameworkCore;
@@ -13,6 +14,7 @@ namespace Roam.Infrastructure.Chat;
 
 public class ChatService : IChatService
 {
+    private static readonly Regex HtmlTagRegex = new(@"</?[a-zA-Z!][^>]*>", RegexOptions.Compiled);
     private readonly ApplicationDbContext _context;
 
     public ChatService(ApplicationDbContext context)
@@ -96,11 +98,15 @@ public class ChatService : IChatService
                 throw new InvalidOperationException("Cannot send messages in a session containing blocked users.");
         }
 
+        var sanitizedText = HtmlTagRegex.Replace(trimmedText, string.Empty).Trim();
+        if (string.IsNullOrWhiteSpace(sanitizedText))
+            throw new ArgumentException("Message text cannot be empty.", nameof(text));
+
         var message = new ChatMessage
         {
             SessionId = sessionId,
             SenderId = senderId,
-            Text = trimmedText,
+            Text = sanitizedText,
             SentAt = DateTime.UtcNow
         };
 

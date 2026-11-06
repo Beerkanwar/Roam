@@ -37,8 +37,18 @@ public static class TrustAndSafetyEndpoints
         })
         .RequireRateLimiting("ReportsPolicy");
 
-        group.MapGet("/users/{userId}/reliability", async (string userId, ITrustAndSafetyService service, CancellationToken cancellationToken) =>
+        group.MapGet("/users/{userId}/reliability", async (string userId, ClaimsPrincipal user, ITrustAndSafetyService service, CancellationToken cancellationToken) =>
         {
+            var callerId = user.FindFirstValue(ClaimTypes.NameIdentifier);
+            if (string.IsNullOrEmpty(callerId))
+                return Results.Unauthorized();
+
+            var isAdmin = user.IsInRole("Admin");
+            if (callerId != userId && !isAdmin)
+            {
+                return Results.Forbid();
+            }
+
             var summary = await service.GetUserReliabilitySummaryAsync(userId, cancellationToken);
             return Results.Ok(new { summary });
         });

@@ -1,3 +1,4 @@
+using System.Threading;
 using System.Threading.Tasks;
 using Roam.Domain.Payments;
 
@@ -7,4 +8,5 @@ public interface IPaymentService
 {
     Task<TipTransaction> SubmitTipAsync(string senderId, string receiverId, decimal amount, string currency, string? tourSessionId, string? idempotencyKey = null);
     Task<Donation> SubmitDonationAsync(decimal amount, string currency, string? donorId, string? idempotencyKey = null);
+    Task<TipTransaction> SettleTipAsync(string tipId, string callerId, bool isAdmin, bool succeeded, CancellationToken cancellationToken = default);
 }
