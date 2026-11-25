@@ -185,8 +185,7 @@ public class LiveSessionViewModel : BaseViewModel, IQueryAttributable, IAsyncDis
 
         try
         {
-            var token = await _authService.GetAccessTokenAsync() ?? string.Empty;
-            await _signalRService.InitializeAsync(token);
+            await _signalRService.InitializeAsync(_authService.GetAccessTokenAsync);
             await _signalRService.JoinSessionAsync(SessionId);
 
             IsConnected = true;

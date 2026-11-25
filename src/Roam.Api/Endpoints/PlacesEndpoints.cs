@@ -5,6 +5,8 @@ namespace Roam.Api.Endpoints;
 
 public static class PlacesEndpoints
 {
+    private const int MaxSearchQueryLength = 200;
+
     public record PlaceDto(string Id, string Name, string Description, double Latitude, double Longitude);
 
     public static void MapPlacesEndpoints(this IEndpointRouteBuilder builder)
@@ -19,6 +21,9 @@ public static class PlacesEndpoints
         {
             if (string.IsNullOrWhiteSpace(q))
                 return Results.BadRequest("Search query 'q' is required.");
+
+            if (q.Trim().Length > MaxSearchQueryLength)
+                return Results.BadRequest($"Search query 'q' cannot exceed {MaxSearchQueryLength} characters.");
 
             var places = await placeService.SearchPlacesAsync(q, cancellationToken);
             var dtos = places.Select(p => new PlaceDto(p.Id, p.Name, p.Description, p.Location.Y, p.Location.X));

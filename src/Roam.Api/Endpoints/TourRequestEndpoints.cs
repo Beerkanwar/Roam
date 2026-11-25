@@ -179,6 +179,15 @@ public static class TourRequestEndpoints
         })
         .RequireAuthorization("RequireApprovedVolunteer");
 
+        // The caller's own open tours (as requester and as assigned volunteer), so clients can start,
+        // rejoin, withdraw from or cancel them after the request has left the public discovery list.
+        group.MapGet("/mine", async (ClaimsPrincipal user, ITourRequestService service, CancellationToken cancellationToken) =>
+        {
+            var userId = user.FindFirstValue(ClaimTypes.NameIdentifier);
+            if (string.IsNullOrEmpty(userId)) return Results.Unauthorized();
+            return Results.Ok(await service.GetMyToursAsync(userId, cancellationToken));
+        });
+
         group.MapPost("/{id}/cancel", async (string id, [FromBody] CancelRequestDto dto, ClaimsPrincipal user, ITourRequestService service, CancellationToken cancellationToken) =>
         {
             var userId = user.FindFirstValue(ClaimTypes.NameIdentifier);
@@ -190,6 +199,7 @@ public static class TourRequestEndpoints
                 return success ? Results.Ok() : Results.NotFound();
             }
             catch (UnauthorizedAccessException ex) { return Results.Problem(ex.Message, statusCode: StatusCodes.Status403Forbidden); }
+            catch (ArgumentException ex) { return Results.BadRequest(new { error = ex.Message }); }
             catch (InvalidOperationException ex) { return Results.BadRequest(new { error = ex.Message }); }
         });
 

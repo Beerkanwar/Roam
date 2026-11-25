@@ -15,6 +15,8 @@ public class PaymentService : IPaymentService
         "USD", "EUR", "GBP", "CAD", "AUD"
     };
 
+    private const int MaxIdempotencyKeyLength = 128;
+
     private readonly ApplicationDbContext _context;
 
     public PaymentService(ApplicationDbContext context)
@@ -24,8 +26,11 @@ public class PaymentService : IPaymentService
 
     public async Task<TipTransaction> SubmitTipAsync(string senderId, string receiverId, decimal amount, string currency, string? tourSessionId, string? idempotencyKey = null)
     {
-        if (amount <= 0 || amount > 1000m)
-            throw new ArgumentException("Tip amount must be between 0.01 and 1000.00.", nameof(amount));
+        if (amount <= 0 || amount > 1000m || decimal.Round(amount, 2) != amount)
+            throw new ArgumentException("Tip amount must be between 0.01 and 1000.00 with at most two decimal places.", nameof(amount));
+
+        if (idempotencyKey?.Length > MaxIdempotencyKeyLength)
+            throw new ArgumentException($"Idempotency key cannot exceed {MaxIdempotencyKeyLength} characters.", nameof(idempotencyKey));
 
         if (string.IsNullOrWhiteSpace(currency) || !AllowedCurrencies.Contains(currency))
             throw new ArgumentException($"Currency '{currency}' is not supported.", nameof(currency));
@@ -107,15 +112,35 @@ public class PaymentService : IPaymentService
         
         // Transaction remains in Pending status until external PSP webhook confirms settlement
         _context.TipTransactions.Add(tip);
-        await _context.SaveChangesAsync();
-        
+        try
+        {
+            await _context.SaveChangesAsync();
+        }
+        catch (DbUpdateException) when (!string.IsNullOrWhiteSpace(idempotencyKey))
+        {
+            // A concurrent request with the same idempotency key won the unique-index race.
+            _context.Entry(tip).State = EntityState.Detached;
+            var winner = await _context.TipTransactions.AsNoTracking()
+                .FirstOrDefaultAsync(t => t.SenderId == senderId && t.IdempotencyKey == idempotencyKey);
+            if (winner == null) throw;
+            if (winner.Amount != amount || winner.ReceiverId != receiverId || winner.TourSessionId != tourSessionId ||
+                !string.Equals(winner.Currency, currency, StringComparison.OrdinalIgnoreCase))
+            {
+                throw new InvalidOperationException("Idempotency key was previously used with different tip request parameters.");
+            }
+            return winner;
+        }
+
         return tip;
     }
 
     public async Task<Donation> SubmitDonationAsync(decimal amount, string currency, string? donorId, string? idempotencyKey = null)
     {
-        if (amount <= 0 || amount > 1000m)
-            throw new ArgumentException("Donation amount must be between 0.01 and 1000.00.", nameof(amount));
+        if (amount <= 0 || amount > 1000m || decimal.Round(amount, 2) != amount)
+            throw new ArgumentException("Donation amount must be between 0.01 and 1000.00 with at most two decimal places.", nameof(amount));
+
+        if (idempotencyKey?.Length > MaxIdempotencyKeyLength)
+            throw new ArgumentException($"Idempotency key cannot exceed {MaxIdempotencyKeyLength} characters.", nameof(idempotencyKey));
 
         if (string.IsNullOrWhiteSpace(currency) || !AllowedCurrencies.Contains(currency))
             throw new ArgumentException($"Currency '{currency}' is not supported.", nameof(currency));
@@ -141,19 +166,38 @@ public class PaymentService : IPaymentService
         
         // Transaction remains in Pending status until external PSP webhook confirms settlement
         _context.Donations.Add(donation);
-        await _context.SaveChangesAsync();
-        
+        try
+        {
+            await _context.SaveChangesAsync();
+        }
+        catch (DbUpdateException) when (!string.IsNullOrWhiteSpace(idempotencyKey))
+        {
+            // A concurrent request with the same idempotency key won the unique-index race.
+            _context.Entry(donation).State = EntityState.Detached;
+            var winner = await _context.Donations.AsNoTracking()
+                .FirstOrDefaultAsync(d => d.DonorId == donorId && d.IdempotencyKey == idempotencyKey);
+            if (winner == null) throw;
+            if (winner.Amount != amount || !string.Equals(winner.Currency, currency, StringComparison.OrdinalIgnoreCase))
+            {
+                throw new InvalidOperationException("Idempotency key was previously used with different donation request parameters.");
+            }
+            return winner;
+        }
+
         return donation;
     }
 
     public async Task<TipTransaction> SettleTipAsync(string tipId, string callerId, bool isAdmin, bool succeeded, CancellationToken cancellationToken = default)
     {
+        // Settlement records the payment provider's outcome. Letting the sender or receiver settle
+        // would allow either party to mark an unpaid tip as Completed, so only administrators
+        // (acting on PSP confirmation) may settle.
+        if (!isAdmin)
+            throw new UnauthorizedAccessException("Only an administrator may settle tip transactions.");
+
         var tip = await _context.TipTransactions.FirstOrDefaultAsync(t => t.Id == tipId, cancellationToken);
         if (tip == null)
             throw new KeyNotFoundException($"Tip transaction '{tipId}' was not found.");
-
-        if (tip.ReceiverId != callerId && tip.SenderId != callerId && !isAdmin)
-            throw new UnauthorizedAccessException("Only the tip participants or an administrator may settle this tip transaction.");
 
         if (tip.Status != PaymentStatus.Pending)
             throw new InvalidOperationException($"Cannot settle tip transaction with status '{tip.Status}'. Only Pending tips can be settled.");

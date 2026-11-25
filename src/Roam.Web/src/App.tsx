@@ -2,8 +2,15 @@ import React, { useState, useCallback, useEffect } from 'react';
 import Map from './components/Map';
 import LiveSession from './components/LiveSession';
 import VolunteerDashboard from './components/VolunteerDashboard';
+import MyTours from './components/MyTours';
 import UserProfileModal, { type UserProfile } from './components/UserProfileModal';
+import AuthPanel from './components/AuthPanel';
+import AdminPanel from './components/AdminPanel';
+import { API_BASE } from './config';
 import * as signalR from '@microsoft/signalr';
+import { TokenManager } from './auth/tokenManager';
+import { hubConnectionOptions } from './auth/hubConnection';
+import { AgeCategory, VolunteerStatus } from './utils/enums';
 import './App.css';
 
 interface Place {
@@ -14,22 +21,20 @@ interface Place {
   longitude: number;
 }
 
-const API_BASE = import.meta.env.VITE_API_BASE_URL || 'https://localhost:7217';
+const tokenManager = new TokenManager(API_BASE, sessionStorage, undefined, undefined, localStorage);
 
 export function App() {
-  const [token, setToken] = useState<string>(() => sessionStorage.getItem('roam_token') || '');
-  const [refreshToken, setRefreshToken] = useState<string>(() => sessionStorage.getItem('roam_refresh_token') || '');
-  const [authEmail, setAuthEmail] = useState('');
-  const [authPassword, setAuthPassword] = useState('');
-  const [isRegistering, setIsRegistering] = useState(false);
-  const [authError, setAuthError] = useState('');
+  // Auth state is owned by tokenManager; this mirrors "signed in or not" for rendering.
+  const [isAuthenticated, setIsAuthenticated] = useState<boolean>(() => tokenManager.isAuthenticated);
 
   // User Profile & Safeguarding
   const [userProfile, setUserProfile] = useState<UserProfile | null>(null);
   const [isProfileModalOpen, setIsProfileModalOpen] = useState(false);
+  const [profileError, setProfileError] = useState('');
+  const [profileReloadKey, setProfileReloadKey] = useState(0);
 
   // Active Tab
-  const [activeTab, setActiveTab] = useState<'explore' | 'volunteer'>('explore');
+  const [activeTab, setActiveTab] = useState<'explore' | 'volunteer' | 'admin'>('explore');
 
   // Search & Places
   const [searchQuery, setSearchQuery] = useState('');
@@ -45,153 +50,117 @@ export function App() {
   const [submittingRequest, setSubmittingRequest] = useState(false);
   const [requestFeedback, setRequestFeedback] = useState<string | null>(null);
 
+  // Bumped whenever tour state may have changed (hub notifications, new requests) so tour lists reload.
+  const [toursRefreshKey, setToursRefreshKey] = useState(0);
+  const refreshTours = useCallback(() => setToursRefreshKey((k) => k + 1), []);
+
   // Live Session
   const [activeSessionId, setActiveSessionId] = useState<string | null>(null);
   const [joinSessionInput, setJoinSessionInput] = useState('');
   const [incomingSessionAlert, setIncomingSessionAlert] = useState<{ sessionId: string; message: string } | null>(null);
 
-  // Save auth tokens in sessionStorage (avoid long-lived persistent localStorage)
   useEffect(() => {
-    // Purge legacy tokens from localStorage if present
-    localStorage.removeItem('roam_token');
-    localStorage.removeItem('roam_refresh_token');
-
-    if (token) {
-      sessionStorage.setItem('roam_token', token);
-    } else {
-      sessionStorage.removeItem('roam_token');
-    }
-  }, [token]);
-
-  useEffect(() => {
-    if (refreshToken) {
-      sessionStorage.setItem('roam_refresh_token', refreshToken);
-    } else {
-      sessionStorage.removeItem('roam_refresh_token');
-    }
-  }, [refreshToken]);
-
-  const handleLogout = useCallback(() => {
-    setToken('');
-    setRefreshToken('');
-    setUserProfile(null);
-    sessionStorage.removeItem('roam_token');
-    sessionStorage.removeItem('roam_refresh_token');
-    localStorage.removeItem('roam_token');
-    localStorage.removeItem('roam_refresh_token');
-    setActiveSessionId(null);
+    return tokenManager.subscribe(() => {
+      const signedIn = tokenManager.isAuthenticated;
+      setIsAuthenticated(signedIn);
+      if (!signedIn) {
+        // Signed out explicitly, or the refresh token was rejected (expired / account suspended).
+        setUserProfile(null);
+        setActiveSessionId(null);
+      }
+    });
   }, []);
 
-  const refreshAuthToken = useCallback(async (): Promise<string | null> => {
-    const currentRefresh = refreshToken || sessionStorage.getItem('roam_refresh_token');
-    if (!currentRefresh) {
-      handleLogout();
-      return null;
-    }
-    try {
-      const response = await fetch(`${API_BASE}/refresh`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ refreshToken: currentRefresh }),
-      });
-      if (response.ok) {
-        const data = await response.json();
-        const newToken = data.accessToken || data.token;
-        const newRefresh = data.refreshToken;
-        if (newToken) {
-          setToken(newToken);
-          sessionStorage.setItem('roam_token', newToken);
-        }
-        if (newRefresh) {
-          setRefreshToken(newRefresh);
-          sessionStorage.setItem('roam_refresh_token', newRefresh);
-        }
-        return newToken || null;
-      } else {
-        handleLogout();
-        return null;
-      }
-    } catch {
-      handleLogout();
-      return null;
-    }
-  }, [refreshToken, handleLogout]);
+  const handleLogout = useCallback(() => {
+    tokenManager.clear();
+  }, []);
 
-  const authFetch = useCallback(async (url: string, options: RequestInit = {}): Promise<Response> => {
-    const headers = new Headers(options.headers || {});
-    if (token) {
-      headers.set('Authorization', `Bearer ${token}`);
-    }
-    let response = await fetch(url, { ...options, headers });
-    if (response.status === 401 && (refreshToken || sessionStorage.getItem('roam_refresh_token'))) {
-      const newToken = await refreshAuthToken();
-      if (newToken) {
-        headers.set('Authorization', `Bearer ${newToken}`);
-        response = await fetch(url, { ...options, headers });
-      }
-    }
-    return response;
-  }, [token, refreshToken, refreshAuthToken]);
+  const authFetch = useCallback(
+    (url: string, options: RequestInit = {}): Promise<Response> => tokenManager.authFetch(url, options),
+    [],
+  );
 
-  // Fetch User Profile
-  const fetchUserProfile = useCallback(async () => {
-    if (!token) return;
-    try {
-      const response = await authFetch(`${API_BASE}/api/v1/profile/me`);
-      if (response.ok) {
-        const profile = await response.json();
-        setUserProfile(profile);
-      }
-    } catch (err) {
-      console.error('Failed to load user profile:', err);
-    }
-  }, [token, authFetch]);
+  const getAccessToken = useCallback(() => tokenManager.getValidAccessToken(), []);
 
+  // Reload the profile (e.g. after onboarding or a volunteer application).
+  const fetchUserProfile = useCallback(() => setProfileReloadKey((k) => k + 1), []);
+
+  // Load the profile, retrying transient failures (network errors, 5xx, rate limiting) with backoff so a
+  // brief server restart does not leave the app without a profile until the page is reloaded.
   useEffect(() => {
-    if (!token) return;
-    let ignore = false;
-    const load = async () => {
+    if (!isAuthenticated) return;
+    let cancelled = false;
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    // About a minute in total: long enough to ride out an API restart during an update.
+    const delays = [1000, 2000, 4000, 8000, 15000, 30000];
+
+    const attempt = async (n: number) => {
       try {
         const response = await authFetch(`${API_BASE}/api/v1/profile/me`);
-        if (response.ok && !ignore) {
-          const profile = await response.json();
-          setUserProfile(profile);
+        if (cancelled) return;
+        if (response.ok) {
+          setUserProfile(await response.json());
+          setProfileError('');
+          return;
         }
-      } catch (err) {
-        console.error('Failed to load user profile:', err);
+        if (response.status < 500 && response.status !== 429) {
+          setProfileError(`Could not load your profile (HTTP ${response.status}).`);
+          return;
+        }
+      } catch {
+        if (cancelled) return;
+      }
+      if (n < delays.length) {
+        timer = setTimeout(() => attempt(n + 1), delays[n]);
+      } else {
+        setProfileError('Could not load your profile. The server may be restarting.');
       }
     };
-    load();
-    return () => {
-      ignore = true;
-    };
-  }, [token, authFetch]);
 
-  // SignalR Notification Hub
+    attempt(0);
+    return () => {
+      cancelled = true;
+      if (timer) clearTimeout(timer);
+    };
+  }, [isAuthenticated, authFetch, profileReloadKey]);
+
+  // SignalR Notification Hub. Lives for the whole signed-in period: the token factory asks for a fresh
+  // token on every (re)connect, so routine token refreshes do not tear the connection down.
   useEffect(() => {
-    if (!token) return;
+    if (!isAuthenticated) return;
 
     const connection = new signalR.HubConnectionBuilder()
-      .withUrl(`${API_BASE}/hubs/notifications`, {
-        accessTokenFactory: () => token,
-      })
+      .withUrl(`${API_BASE}/hubs/notifications`, hubConnectionOptions(getAccessToken))
       .withAutomaticReconnect()
       .build();
 
     connection.on('TourStarting', (sessionId: string) => {
+      refreshTours();
       setIncomingSessionAlert({
         sessionId,
         message: 'A volunteer has launched your tour! The live stream is ready.',
       });
     });
 
+    // The live session view handles its own end-of-tour flow (feedback); here just update lists/alerts.
     connection.on('TourEnded', () => {
-      setActiveSessionId(null);
+      refreshTours();
       setIncomingSessionAlert(null);
     });
 
     connection.on('TourRequestAccepted', (requestId: string) => {
+      refreshTours();
       setRequestFeedback(`Tour request (${requestId.substring(0, 8)}...) was accepted! Preparing live session...`);
+    });
+
+    connection.on('TourRequestVolunteerWithdrawn', (requestId: string) => {
+      refreshTours();
+      setRequestFeedback(`The volunteer for request ${requestId.substring(0, 8)}... is no longer available. Your request is open to other volunteers again.`);
+    });
+
+    connection.on('TourRequestCancelled', (requestId: string) => {
+      refreshTours();
+      setRequestFeedback(`Tour request ${requestId.substring(0, 8)}... was cancelled.`);
     });
 
     connection.start()
@@ -203,39 +172,12 @@ export function App() {
     return () => {
       connection.stop();
     };
-  }, [token]);
+  }, [isAuthenticated, getAccessToken, refreshTours]);
 
-  // Authentication submission
-  const handleAuthSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setAuthError('');
-    const endpoint = isRegistering ? '/register' : '/login';
-
-    try {
-      const response = await fetch(`${API_BASE}${endpoint}`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email: authEmail, password: authPassword }),
-      });
-
-      if (response.ok) {
-        if (isRegistering) {
-          setIsRegistering(false);
-          alert('Registration successful! Please log in to complete adult safeguarding verification.');
-        } else {
-          const data = await response.json();
-          const receivedToken = data.accessToken || data.token;
-          if (receivedToken) setToken(receivedToken);
-          if (data.refreshToken) setRefreshToken(data.refreshToken);
-        }
-      } else {
-        const errorText = await response.text();
-        setAuthError(errorText || 'Authentication failed.');
-      }
-    } catch (err) {
-      setAuthError(`Connection error: ${err}`);
-    }
-  };
+  const handleSignedIn = useCallback(
+    (tokens: unknown) => tokenManager.setTokens(tokens as Parameters<typeof tokenManager.setTokens>[0]),
+    [],
+  );
 
   // Search Places
   const executeSearch = async (query: string) => {
@@ -267,7 +209,7 @@ export function App() {
 
   // Request tour by Place ID
   const handleRequestTourById = async (placeId: string, placeName: string) => {
-    if (!token) {
+    if (!isAuthenticated) {
       alert('Please sign in to submit a tour request.');
       return;
     }
@@ -289,6 +231,7 @@ export function App() {
 
       if (response.ok) {
         setRequestFeedback(`Tour request for "${placeName}" broadcasted! Nearby volunteers have been notified.`);
+        refreshTours();
         setRequestDescription('');
       } else {
         const err = await response.json().catch(() => ({}));
@@ -303,7 +246,7 @@ export function App() {
 
   // Request tour by Map Coordinates
   const handleRequestTourByCoords = async () => {
-    if (!token) {
+    if (!isAuthenticated) {
       alert('Please sign in to submit a tour request.');
       return;
     }
@@ -327,6 +270,7 @@ export function App() {
 
       if (response.ok) {
         setRequestFeedback(`Tour request broadcasted at (${selectedCoords.lat.toFixed(4)}, ${selectedCoords.lng.toFixed(4)})!`);
+        refreshTours();
         setRequestDescription('');
         setSelectedCoords(null);
       } else {
@@ -346,7 +290,10 @@ export function App() {
     setRequestFeedback(null);
   }, []);
 
-  const isApprovedVolunteer = userProfile?.volunteerStatus === 2;
+  const isApprovedVolunteer = userProfile?.volunteerStatus === VolunteerStatus.Approved;
+  const isAdmin = !!userProfile?.isAdmin;
+  // Never leave a signed-out (or demoted) user on the admin tab.
+  const visibleTab = activeTab === 'admin' && !isAdmin ? 'explore' : activeTab;
 
   return (
     <div style={{ position: 'relative', width: '100%', height: '100vh', overflow: 'hidden' }}>
@@ -355,7 +302,9 @@ export function App() {
         <div style={{ position: 'relative', width: '100%', height: '100vh', backgroundColor: '#0b0f19', zIndex: 100 }}>
           <LiveSession
             sessionId={activeSessionId}
-            token={token}
+            getAccessToken={getAccessToken}
+            authFetch={authFetch}
+            currentUserId={userProfile?.id}
             onLeaveSession={() => setActiveSessionId(null)}
           />
         </div>
@@ -421,7 +370,7 @@ export function App() {
                   <span style={{ fontSize: '0.72rem', color: '#94a3b8' }}>Human-Powered Exploration</span>
                 </div>
 
-                {token ? (
+                {isAuthenticated ? (
                   <div style={{ display: 'flex', gap: '6px', alignItems: 'center' }}>
                     <button
                       onClick={() => setIsProfileModalOpen(true)}
@@ -429,7 +378,9 @@ export function App() {
                       style={{ fontSize: '0.75rem', padding: '5px 10px' }}
                       title="View Profile & Safeguarding"
                     >
-                      👤 {userProfile?.displayName || 'Profile'}
+                      <span style={{ display: 'inline-block', maxWidth: '120px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', verticalAlign: 'bottom' }}>
+                        👤 {userProfile?.displayName || 'Profile'}
+                      </span>
                     </button>
                     <button
                       onClick={handleLogout}
@@ -446,65 +397,52 @@ export function App() {
               <div className="roam-tabs">
                 <button
                   type="button"
-                  className={`roam-tab-btn ${activeTab === 'explore' ? 'active' : ''}`}
+                  className={`roam-tab-btn ${visibleTab === 'explore' ? 'active' : ''}`}
                   onClick={() => setActiveTab('explore')}
                 >
-                  🗺️ Explore &amp; Request
+                  🗺️ Explore
                 </button>
                 <button
                   type="button"
-                  className={`roam-tab-btn ${activeTab === 'volunteer' ? 'active' : ''}`}
+                  className={`roam-tab-btn ${visibleTab === 'volunteer' ? 'active' : ''}`}
                   onClick={() => setActiveTab('volunteer')}
                 >
-                  🚀 Volunteer Hub
+                  🚀 Volunteer
                 </button>
+                {isAdmin && (
+                  <button
+                    type="button"
+                    className={`roam-tab-btn ${visibleTab === 'admin' ? 'active' : ''}`}
+                    onClick={() => setActiveTab('admin')}
+                  >
+                    🛡️ Admin
+                  </button>
+                )}
               </div>
             </div>
 
             {/* Panel Body */}
             <div className="roam-panel-body">
               {/* Unauthenticated View */}
-              {!token && (
-                <div style={{
-                  padding: '16px',
-                  backgroundColor: '#0b0f19',
-                  borderRadius: '10px',
-                  border: '1px solid #1e293b',
-                }}>
-                  <div style={{ fontSize: '0.9rem', fontWeight: 600, marginBottom: '10px', color: '#f8fafc' }}>
-                    {isRegistering ? 'Create Your Explorer Account' : 'Sign In to Roam'}
-                  </div>
-                  <form onSubmit={handleAuthSubmit} style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
-                    <input
-                      type="email"
-                      placeholder="Email Address"
-                      value={authEmail}
-                      onChange={(e) => setAuthEmail(e.target.value)}
-                      required
-                      className="roam-input"
-                    />
-                    <input
-                      type="password"
-                      placeholder="Password"
-                      value={authPassword}
-                      onChange={(e) => setAuthPassword(e.target.value)}
-                      required
-                      className="roam-input"
-                    />
-                    {authError && (
-                      <div style={{ color: '#f87171', fontSize: '0.75rem', lineHeight: '1.4' }}>{authError}</div>
-                    )}
-                    <button type="submit" className="roam-btn-primary">
-                      {isRegistering ? 'Register' : 'Sign In'}
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => { setIsRegistering(!isRegistering); setAuthError(''); }}
-                      style={{ background: 'none', border: 'none', color: '#a5b4fc', cursor: 'pointer', fontSize: '0.78rem', textAlign: 'center' }}
-                    >
-                      {isRegistering ? 'Already have an account? Sign In' : "Don't have an account? Register"}
-                    </button>
-                  </form>
+              {!isAuthenticated && <AuthPanel apiBase={API_BASE} onSignedIn={handleSignedIn} />}
+
+              {/* Profile could not be loaded (after retries) */}
+              {isAuthenticated && profileError && (
+                <div role="alert" style={{ padding: '10px 12px', backgroundColor: '#450a0a', border: '1px solid #7f1d1d', borderRadius: '8px', color: '#fca5a5', fontSize: '0.8rem', display: 'flex', gap: '8px', alignItems: 'center', justifyContent: 'space-between' }}>
+                  <span>{profileError}</span>
+                  <button type="button" onClick={() => { setProfileError(''); fetchUserProfile(); }} className="roam-btn-secondary" style={{ fontSize: '0.75rem', padding: '4px 10px' }}>
+                    Retry
+                  </button>
+                </div>
+              )}
+
+              {/* Signed in but not age-verified yet: point to the one step that unlocks the app */}
+              {isAuthenticated && userProfile && userProfile.ageCategory !== AgeCategory.Adult && (
+                <div style={{ padding: '10px 12px', backgroundColor: '#1e1b4b', border: '1px solid #4338ca', borderRadius: '8px', color: '#c7d2fe', fontSize: '0.8rem', display: 'flex', gap: '8px', alignItems: 'center', justifyContent: 'space-between' }}>
+                  <span>Finish your profile (18+ check) to request or host tours.</span>
+                  <button type="button" onClick={() => setIsProfileModalOpen(true)} className="roam-btn-primary" style={{ fontSize: '0.75rem', padding: '5px 10px', whiteSpace: 'nowrap' }}>
+                    Finish profile
+                  </button>
                 </div>
               )}
 
@@ -529,7 +467,7 @@ export function App() {
               </div>
 
               {/* TAB 1: EXPLORE & REQUEST */}
-              {activeTab === 'explore' && (
+              {visibleTab === 'explore' && (
                 <>
                   {/* Search Form */}
                   <form onSubmit={handleSearchSubmit} style={{ display: 'flex', gap: '6px' }}>
@@ -629,6 +567,18 @@ export function App() {
                     </div>
                   )}
 
+                  {/* The requester's own open requests: cancel, or join once live */}
+                  {isAuthenticated && (
+                    <MyTours
+                      apiBase={API_BASE}
+                      authFetch={authFetch}
+                      role="Requester"
+                      title="Your Tour Requests"
+                      refreshKey={toursRefreshKey}
+                      onJoinSession={(sessionId) => setActiveSessionId(sessionId)}
+                    />
+                  )}
+
                   {/* Selected Map Coordinates Card */}
                   {selectedCoords && (
                     <div style={{
@@ -706,15 +656,25 @@ export function App() {
               )}
 
               {/* TAB 2: VOLUNTEER DISPATCH HUB */}
-              {activeTab === 'volunteer' && (
+              {visibleTab === 'volunteer' && (
                 <VolunteerDashboard
                   apiBase={API_BASE}
                   authFetch={authFetch}
                   isApprovedVolunteer={isApprovedVolunteer}
                   onStartSession={(sessionId) => setActiveSessionId(sessionId)}
                   onApplyVolunteer={() => setIsProfileModalOpen(true)}
+                  refreshKey={toursRefreshKey}
                 />
               )}
+
+              {/* TAB 3: ADMIN (administrators only; the API enforces this too) */}
+              {visibleTab === 'admin' && <AdminPanel apiBase={API_BASE} authFetch={authFetch} />}
+
+              <div style={{ marginTop: 'auto', paddingTop: '8px', fontSize: '0.7rem', color: '#64748b', textAlign: 'center' }}>
+                <a href="/privacy.html" target="_blank" rel="noopener" style={{ color: '#94a3b8' }}>Privacy</a>
+                {' · '}
+                <a href="/terms.html" target="_blank" rel="noopener" style={{ color: '#94a3b8' }}>Terms</a>
+              </div>
             </div>
           </div>
 
@@ -725,6 +685,7 @@ export function App() {
               authFetch={authFetch}
               profile={userProfile}
               onProfileUpdated={fetchUserProfile}
+              onAccountDeleted={() => { setIsProfileModalOpen(false); handleLogout(); }}
               onClose={() => setIsProfileModalOpen(false)}
             />
           )}

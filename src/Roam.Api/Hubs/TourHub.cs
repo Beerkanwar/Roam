@@ -1,9 +1,9 @@
-using System.Collections.Concurrent;
 using System.Security.Claims;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.SignalR;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Caching.Memory;
+using Roam.Api.Scaling;
 using Roam.Domain.TourSessions;
 using Roam.Infrastructure.Persistence;
 
@@ -12,21 +12,28 @@ namespace Roam.Api.Hubs;
 [Authorize]
 public class TourHub : Hub<ITourClient>
 {
-    private static readonly ConcurrentDictionary<string, (string SessionId, string UserId)> SessionConnections = new();
     private readonly ApplicationDbContext _context;
     private readonly IMemoryCache _cache;
+    private readonly ITourConnectionRegistry _connections;
 
-    public TourHub(ApplicationDbContext context, IMemoryCache cache)
+    public TourHub(ApplicationDbContext context, IMemoryCache cache, ITourConnectionRegistry connections)
     {
         _context = context;
         _cache = cache;
+        _connections = connections;
     }
 
     private static string GetGroupName(string sessionId) => $"tour:{sessionId}";
 
     public override async Task OnDisconnectedAsync(Exception? exception)
     {
-        SessionConnections.TryRemove(Context.ConnectionId, out _);
+        var info = await _connections.GetAsync(Context.ConnectionId);
+        if (info != null)
+        {
+            await _connections.RemoveAsync(Context.ConnectionId);
+            // Let remaining peers tear down their WebRTC state for the dropped connection.
+            await Clients.OthersInGroup(GetGroupName(info.SessionId)).ParticipantLeft(Context.ConnectionId);
+        }
         await base.OnDisconnectedAsync(exception);
     }
 
@@ -76,7 +83,8 @@ public class TourHub : Hub<ITourClient>
 
     private async Task ValidateTargetConnectionAsync(string sessionId, string targetConnectionId)
     {
-        if (!SessionConnections.TryGetValue(targetConnectionId, out var targetInfo) || targetInfo.SessionId != sessionId)
+        var targetInfo = await _connections.GetAsync(targetConnectionId);
+        if (targetInfo == null || targetInfo.SessionId != sessionId)
         {
             throw new HubException("Target connection is not a member of this active session.");
         }
@@ -100,7 +108,7 @@ public class TourHub : Hub<ITourClient>
         var userId = Context.User?.FindFirstValue(ClaimTypes.NameIdentifier) ?? string.Empty;
         await ValidateSessionMembershipAsync(sessionId);
         
-        SessionConnections[Context.ConnectionId] = (sessionId, userId);
+        await _connections.RegisterAsync(Context.ConnectionId, new TourConnection(sessionId, userId));
         var groupName = GetGroupName(sessionId);
         await Groups.AddToGroupAsync(Context.ConnectionId, groupName);
         await Clients.Group(groupName).ParticipantJoined(Context.ConnectionId);
@@ -108,10 +116,17 @@ public class TourHub : Hub<ITourClient>
 
     public async Task LeaveSession(string sessionId)
     {
-        SessionConnections.TryRemove(Context.ConnectionId, out _);
         var groupName = GetGroupName(sessionId);
         await Groups.RemoveFromGroupAsync(Context.ConnectionId, groupName);
-        await Clients.Group(groupName).ParticipantLeft(Context.ConnectionId);
+
+        // Only announce departure from a session this connection actually joined; otherwise any
+        // authenticated user could inject ParticipantLeft events into arbitrary sessions.
+        var info = await _connections.GetAsync(Context.ConnectionId);
+        if (info != null && info.SessionId == sessionId)
+        {
+            await _connections.RemoveAsync(Context.ConnectionId);
+            await Clients.Group(groupName).ParticipantLeft(Context.ConnectionId);
+        }
     }
 
     public async Task SendOffer(string sessionId, string sdp, string? targetConnectionId = null)

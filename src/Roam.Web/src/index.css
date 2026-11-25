@@ -50,20 +50,18 @@
   }
 }
 
+/* The app is a full-screen map with floating panels: no page width cap, centring or borders. */
 #root {
-  width: 1126px;
-  max-width: 100%;
-  margin: 0 auto;
-  text-align: center;
-  border-inline: 1px solid var(--border);
+  width: 100%;
   min-height: 100svh;
-  display: flex;
-  flex-direction: column;
+  text-align: left;
   box-sizing: border-box;
 }
 
 body {
   margin: 0;
+  /* Matches the app's dark panels so there is no white flash before the map loads. */
+  background: #0b0f19;
 }
 
 h1,

@@ -1,3 +1,4 @@
+import MyTours from './MyTours';
 import React, { useState, useEffect, useCallback } from 'react';
 
 interface PlaceInfo {
@@ -22,6 +23,8 @@ interface VolunteerDashboardProps {
   isApprovedVolunteer: boolean;
   onStartSession: (sessionId: string) => void;
   onApplyVolunteer: () => void;
+  /** Bumped by the parent on hub notifications so the accepted-tours list reloads. */
+  refreshKey?: number;
 }
 
 export const VolunteerDashboard: React.FC<VolunteerDashboardProps> = ({
@@ -30,7 +33,9 @@ export const VolunteerDashboard: React.FC<VolunteerDashboardProps> = ({
   isApprovedVolunteer,
   onStartSession,
   onApplyVolunteer,
+  refreshKey = 0,
 }) => {
+  const [myToursKey, setMyToursKey] = useState(0);
   const [availableForRequests, setAvailableForRequests] = useState<boolean>(true);
   const [volunteerSettings, setVolunteerSettings] = useState<{
     enabled?: boolean;
@@ -179,7 +184,8 @@ export const VolunteerDashboard: React.FC<VolunteerDashboardProps> = ({
     return () => {
       ignore = true;
     };
-  }, [isApprovedVolunteer, fetchNearbyRequests]);
+    // gpsLocation: re-query as soon as a new position is synced, since results are distance-based.
+  }, [isApprovedVolunteer, fetchNearbyRequests, gpsLocation]);
 
   // 4. Accept a request
   const handleAcceptRequest = async (requestId: string) => {
@@ -190,38 +196,15 @@ export const VolunteerDashboard: React.FC<VolunteerDashboardProps> = ({
         method: 'POST',
       });
       if (response.ok) {
-        setActionSuccess(`Request ${requestId} accepted! You can now start the live broadcast.`);
+        setActionSuccess('Request accepted! Start the live tour from "Your Accepted Tours" when you are ready.');
         fetchNearbyRequests();
+        setMyToursKey((k) => k + 1);
       } else {
         const errData = await response.json().catch(() => ({}));
         setActionError(errData.error || 'Failed to accept request.');
       }
     } catch (err) {
       setActionError(`Error accepting request: ${err}`);
-    }
-  };
-
-  // 5. Start tour broadcast
-  const handleStartTour = async (requestId: string) => {
-    setActionError('');
-    setActionSuccess('');
-    try {
-      const response = await authFetch(`${apiBase}/api/v1/tour-requests/${requestId}/start`, {
-        method: 'POST',
-      });
-      if (response.ok) {
-        const data = await response.json();
-        if (data.sessionId) {
-          onStartSession(data.sessionId);
-        } else {
-          setActionError('Tour started but no sessionId was returned.');
-        }
-      } else {
-        const errData = await response.json().catch(() => ({}));
-        setActionError(errData.error || 'Failed to start tour session.');
-      }
-    } catch (err) {
-      setActionError(`Error starting tour: ${err}`);
     }
   };
 
@@ -398,6 +381,16 @@ export const VolunteerDashboard: React.FC<VolunteerDashboardProps> = ({
         </div>
       )}
 
+      {/* Tours this volunteer has accepted: start, rejoin or withdraw */}
+      <MyTours
+        apiBase={apiBase}
+        authFetch={authFetch}
+        role="Volunteer"
+        title="Your Accepted Tours"
+        refreshKey={refreshKey + myToursKey}
+        onJoinSession={onStartSession}
+      />
+
       {/* Incoming Requests List */}
       <div>
         <h4 style={{ margin: '0 0 10px 0', fontSize: '0.95rem', color: '#cbd5e1' }}>
@@ -476,22 +469,6 @@ export const VolunteerDashboard: React.FC<VolunteerDashboardProps> = ({
                     }}
                   >
                     Accept Request
-                  </button>
-                  <button
-                    onClick={() => handleStartTour(req.id)}
-                    style={{
-                      flex: 1,
-                      padding: '7px 12px',
-                      backgroundColor: '#6366f1',
-                      color: '#ffffff',
-                      border: 'none',
-                      borderRadius: '6px',
-                      fontWeight: 600,
-                      cursor: 'pointer',
-                      fontSize: '0.8rem',
-                    }}
-                  >
-                    Start Live Tour
                   </button>
                 </div>
               </div>

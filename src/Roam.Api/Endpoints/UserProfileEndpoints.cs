@@ -3,6 +3,8 @@ using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using NetTopologySuite.Geometries;
+using Roam.Api.Security;
+using Roam.Application.TourRequests;
 using Roam.Domain.Places;
 using Roam.Domain.Users;
 using Roam.Infrastructure.Persistence;
@@ -11,6 +13,24 @@ namespace Roam.Api.Endpoints;
 
 public static class UserProfileEndpoints
 {
+    internal const int MaxProfilePhotoUrlLength = 2048;
+    internal const int MaxLanguagesLength = 200;
+
+    /// <summary>
+    /// A profile photo URL is optional; when present it must be an absolute https URL so clients
+    /// never render script (javascript:), inline (data:) or plaintext (http:) sources.
+    /// </summary>
+    internal static bool IsValidProfilePhotoUrl(string? url)
+    {
+        if (string.IsNullOrWhiteSpace(url)) return true;
+        var trimmed = url.Trim();
+        if (trimmed.Length > MaxProfilePhotoUrlLength) return false;
+        return Uri.TryCreate(trimmed, UriKind.Absolute, out var uri)
+               && uri.Scheme == Uri.UriSchemeHttps
+               && !string.IsNullOrEmpty(uri.Host)
+               && string.IsNullOrEmpty(uri.UserInfo);
+    }
+
     public static void MapUserProfileEndpoints(this IEndpointRouteBuilder builder)
     {
         var group = builder.MapGroup("/api/v1/profile")
@@ -57,11 +77,14 @@ public static class UserProfileEndpoints
             {
                 appUser.Id,
                 appUser.Email,
+                appUser.EmailConfirmed,
                 appUser.DisplayName,
                 appUser.Country,
                 appUser.ProfilePhotoUrl,
                 appUser.VolunteerStatus,
                 appUser.AgeCategory,
+                // Roles come from the live claims (UserStateClaimsTransformation), so this is current.
+                IsAdmin = user.IsInRole("Admin"),
                 VolunteerSettings = appUser.VolunteerSettings != null ? new
                 {
                     appUser.VolunteerSettings.Enabled,
@@ -87,6 +110,9 @@ public static class UserProfileEndpoints
 
             if (string.IsNullOrWhiteSpace(dto.Country) || dto.Country.Length > 100)
                 return Results.BadRequest(new { error = "Valid country is required." });
+
+            if (!IsValidProfilePhotoUrl(dto.ProfilePhotoUrl))
+                return Results.BadRequest(new { error = $"Profile photo URL must be an absolute https URL of at most {MaxProfilePhotoUrlLength} characters." });
 
             // 18+ Safeguarding check with realistic bounds
             var today = DateOnly.FromDateTime(DateTime.UtcNow);
@@ -115,7 +141,7 @@ public static class UserProfileEndpoints
             appUser.Country = dto.Country.Trim();
             appUser.DateOfBirth = dto.DateOfBirth;
             appUser.AgeCategory = AgeCategory.Adult;
-            appUser.ProfilePhotoUrl = dto.ProfilePhotoUrl;
+            appUser.ProfilePhotoUrl = string.IsNullOrWhiteSpace(dto.ProfilePhotoUrl) ? null : dto.ProfilePhotoUrl.Trim();
             appUser.UpdatedAt = DateTime.UtcNow;
 
             await context.SaveChangesAsync(cancellationToken);
@@ -131,6 +157,9 @@ public static class UserProfileEndpoints
 
             if (dto.MaxConcurrentViewers is < 1 or > 100)
                 return Results.BadRequest(new { error = "Max concurrent viewers must be between 1 and 100." });
+
+            if (dto.Languages?.Length > MaxLanguagesLength)
+                return Results.BadRequest(new { error = $"Languages cannot exceed {MaxLanguagesLength} characters." });
 
             var existing = await context.VolunteerSettings.FirstOrDefaultAsync(vs => vs.UserId == userId, cancellationToken);
 
@@ -220,6 +249,23 @@ public static class UserProfileEndpoints
             var tourRequests = await context.TourRequests
                 .Where(r => r.RequesterId == userId || r.AssignedVolunteerId == userId)
                 .AsNoTracking()
+                .Select(r => new
+                {
+                    r.Id,
+                    r.RequesterId,
+                    r.AssignedVolunteerId,
+                    r.PlaceId,
+                    r.Visibility,
+                    r.Mode,
+                    r.Status,
+                    r.Description,
+                    r.RequestedStartTime,
+                    r.CreatedAt,
+                    r.ExpiresAt,
+                    r.CancelledByUserId,
+                    r.CancellationReason,
+                    r.CancelledAt
+                })
                 .ToListAsync(cancellationToken);
 
             var feedbacks = await context.Feedbacks
@@ -232,9 +278,38 @@ public static class UserProfileEndpoints
                 .AsNoTracking()
                 .ToListAsync(cancellationToken);
 
-            var reports = await context.Reports
-                .Where(r => r.ReporterId == userId || r.ReportedUserId == userId)
+            // Reports filed BY the user are exported in full. Reports filed AGAINST the user are exported
+            // without the reporter's identity or free-text description, so the export cannot be used to
+            // identify (and retaliate against) whoever reported them.
+            var reportsFiled = await context.Reports
+                .Where(r => r.ReporterId == userId)
                 .AsNoTracking()
+                .Select(r => new
+                {
+                    r.Id,
+                    r.ReportedUserId,
+                    r.TourSessionId,
+                    r.Reason,
+                    r.Description,
+                    r.Severity,
+                    r.Status,
+                    r.CreatedAt,
+                    r.ResolvedAt
+                })
+                .ToListAsync(cancellationToken);
+
+            var reportsReceived = await context.Reports
+                .Where(r => r.ReportedUserId == userId && r.ReporterId != userId)
+                .AsNoTracking()
+                .Select(r => new
+                {
+                    r.Id,
+                    r.TourSessionId,
+                    r.Reason,
+                    r.Status,
+                    r.CreatedAt,
+                    r.ResolvedAt
+                })
                 .ToListAsync(cancellationToken);
 
             var tips = await context.TipTransactions
@@ -266,12 +341,23 @@ public static class UserProfileEndpoints
                     appUser.AgeCategory,
                     appUser.CreatedAt,
                     appUser.VolunteerStatus,
-                    appUser.VolunteerSettings
+                    // Explicit projection: serializing the entity would follow VolunteerSettings.User back to
+                    // ApplicationUser (object cycle -> 500, and exposure of PasswordHash/SecurityStamp).
+                    VolunteerSettings = appUser.VolunteerSettings == null ? null : new
+                    {
+                        appUser.VolunteerSettings.Enabled,
+                        appUser.VolunteerSettings.AvailableForRequests,
+                        appUser.VolunteerSettings.AcceptsPrivateTours,
+                        appUser.VolunteerSettings.AcceptsGroupTours,
+                        appUser.VolunteerSettings.MaxConcurrentViewers,
+                        appUser.VolunteerSettings.Languages,
+                        appUser.VolunteerSettings.TipEnabled
+                    }
                 },
                 TourRequests = tourRequests,
                 Feedbacks = feedbacks,
                 ChatMessages = chatMessages,
-                Reports = reports,
+                Reports = new { Filed = reportsFiled, Received = reportsReceived },
                 Tips = tips,
                 Location = userLoc,
                 Blocks = blocks
@@ -282,7 +368,8 @@ public static class UserProfileEndpoints
         .RequireAuthorization();
 
         // GDPR Data Subject: Delete / Anonymize Account (M8: anonymize chat, requests, feedback, blocks)
-        group.MapDelete("/me", async (ClaimsPrincipal user, [FromBody] DeleteAccountDto? dto, UserManager<ApplicationUser> userManager, ApplicationDbContext context, CancellationToken cancellationToken) =>
+        group.MapDelete("/me", async (ClaimsPrincipal user, [FromBody] DeleteAccountDto? dto, UserManager<ApplicationUser> userManager, ApplicationDbContext context,
+            ITourRequestService tourRequestService, ITourNotificationService notificationService, IUserStateCache userStateCache, CancellationToken cancellationToken) =>
         {
             var userId = user.FindFirstValue(ClaimTypes.NameIdentifier);
             if (string.IsNullOrEmpty(userId)) return Results.Unauthorized();
@@ -300,6 +387,10 @@ public static class UserProfileEndpoints
             {
                 return Results.BadRequest(new { error = "Invalid password for account deletion." });
             }
+
+            // All anonymization steps must succeed or fail together: ExecuteUpdateAsync commits immediately,
+            // so without a transaction a later failure would leave a half-anonymized account.
+            await using var transaction = await context.Database.BeginTransactionAsync(cancellationToken);
 
             // Anonymize personal details
             appUser.DisplayName = "Deleted User";
@@ -323,9 +414,23 @@ public static class UserProfileEndpoints
                 .Where(f => f.ReviewerId == userId)
                 .ExecuteUpdateAsync(s => s.SetProperty(f => f.Comments, "[Feedback author deleted]"), cancellationToken);
 
+            // Cancel every request the user still has in flight (not only Draft/Published), so volunteers
+            // are not left holding interested/accepted/confirmed tours for a deleted account.
+            var cancellableStatuses = new[]
+            {
+                Roam.Domain.TourRequests.TourRequestStatus.Draft,
+                Roam.Domain.TourRequests.TourRequestStatus.Published,
+                Roam.Domain.TourRequests.TourRequestStatus.Matching,
+                Roam.Domain.TourRequests.TourRequestStatus.VolunteerInterested,
+                Roam.Domain.TourRequests.TourRequestStatus.Accepted,
+                Roam.Domain.TourRequests.TourRequestStatus.Confirmed
+            };
+            var now = DateTime.UtcNow;
             await context.TourRequests
-                .Where(r => r.RequesterId == userId && (r.Status == Roam.Domain.TourRequests.TourRequestStatus.Draft || r.Status == Roam.Domain.TourRequests.TourRequestStatus.Published))
+                .Where(r => r.RequesterId == userId && cancellableStatuses.Contains(r.Status))
                 .ExecuteUpdateAsync(s => s.SetProperty(r => r.Status, Roam.Domain.TourRequests.TourRequestStatus.Cancelled)
+                                          .SetProperty(r => r.CancelledByUserId, userId)
+                                          .SetProperty(r => r.CancelledAt, now)
                                           .SetProperty(r => r.CancellationReason, "User account deleted"), cancellationToken);
 
             // Remove location record
@@ -346,6 +451,25 @@ public static class UserProfileEndpoints
             }
 
             await context.SaveChangesAsync(cancellationToken);
+
+            // A deleted volunteer must not stay assigned: pre-start assignments go back to discovery and
+            // live sessions they are in are ended (same transaction, same DbContext).
+            var tourChanges = await tourRequestService.ReleaseToursForDeletedUserAsync(userId, cancellationToken);
+
+            await transaction.CommitAsync(cancellationToken);
+            userStateCache.Invalidate(userId);
+
+            // Notify only after commit so clients never react to changes that were rolled back.
+            foreach (var (requestId, requesterId) in tourChanges.RepublishedRequests)
+            {
+                await notificationService.VolunteerWithdrawnAsync(requestId, requesterId);
+                await notificationService.TourRequestCreatedAsync(requestId);
+            }
+            foreach (var (sessionId, otherUserId) in tourChanges.EndedSessions)
+            {
+                await notificationService.SessionEndedForUserAsync(sessionId, otherUserId);
+            }
+
             return Results.NoContent();
         })
         .RequireAuthorization();

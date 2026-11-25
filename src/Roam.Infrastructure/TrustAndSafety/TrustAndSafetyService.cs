@@ -15,8 +15,25 @@ public class TrustAndSafetyService : ITrustAndSafetyService
         _context = context;
     }
 
+    internal const int MaxTextLength = 2000;
+
     public async Task<Report> SubmitReportAsync(CreateReportDto dto, CancellationToken cancellationToken = default)
     {
+        if (string.IsNullOrWhiteSpace(dto.ReportedUserId))
+            throw new ArgumentException("A reported user is required.", nameof(dto.ReportedUserId));
+
+        if (!Enum.IsDefined(dto.Reason))
+            throw new ArgumentException("Invalid report reason.", nameof(dto.Reason));
+
+        if (!Enum.IsDefined(dto.Severity))
+            throw new ArgumentException("Invalid report severity.", nameof(dto.Severity));
+
+        if (dto.Description?.Length > MaxTextLength)
+            throw new ArgumentException($"Report description cannot exceed {MaxTextLength} characters.", nameof(dto.Description));
+
+        dto.Description = dto.Description?.Trim() ?? string.Empty;
+        dto.TourSessionId ??= string.Empty;
+
         if (dto.ReporterId == dto.ReportedUserId)
             throw new InvalidOperationException("Users cannot submit reports against themselves.");
 
@@ -116,15 +133,34 @@ public class TrustAndSafetyService : ITrustAndSafetyService
 
     public async Task BlockUserAsync(string blockerId, string blockedId, CancellationToken cancellationToken = default)
     {
+        if (string.IsNullOrWhiteSpace(blockedId))
+            throw new ArgumentException("A user to block is required.", nameof(blockedId));
+
         if (blockerId == blockedId) return;
 
         var exists = await _context.UserBlocks
             .AnyAsync(ub => ub.BlockerId == blockerId && ub.BlockedId == blockedId, cancellationToken);
 
-        if (!exists)
+        if (exists) return;
+
+        // UserBlocks has a foreign key to AspNetUsers; check up front instead of surfacing a 500.
+        var targetExists = await _context.Users.AnyAsync(u => u.Id == blockedId, cancellationToken);
+        if (!targetExists)
+            throw new ArgumentException("The user to block does not exist.", nameof(blockedId));
+
+        var block = new UserBlock(blockerId, blockedId);
+        _context.UserBlocks.Add(block);
+        try
         {
-            _context.UserBlocks.Add(new UserBlock(blockerId, blockedId));
             await _context.SaveChangesAsync(cancellationToken);
+        }
+        catch (DbUpdateException)
+        {
+            // A concurrent identical block request already inserted the row; blocking is idempotent.
+            _context.Entry(block).State = EntityState.Detached;
+            var nowExists = await _context.UserBlocks
+                .AnyAsync(ub => ub.BlockerId == blockerId && ub.BlockedId == blockedId, cancellationToken);
+            if (!nowExists) throw;
         }
     }
 
@@ -150,6 +186,12 @@ public class TrustAndSafetyService : ITrustAndSafetyService
 
     public async Task ResolveReportAsync(string reportId, ModerationAction action, string moderatorId, string reason, CancellationToken cancellationToken = default)
     {
+        if (!Enum.IsDefined(action))
+            throw new ArgumentException("Invalid moderation action.", nameof(action));
+
+        if (reason?.Length > MaxTextLength)
+            throw new ArgumentException($"Moderation reason cannot exceed {MaxTextLength} characters.", nameof(reason));
+
         var report = await _context.Reports.FirstOrDefaultAsync(r => r.Id == reportId, cancellationToken);
         if (report == null) throw new ArgumentException("Report not found.");
         
@@ -173,7 +215,7 @@ public class TrustAndSafetyService : ITrustAndSafetyService
             TargetUserId = modCase.TargetUserId,
             ModeratorId = moderatorId,
             Action = action,
-            Reason = reason
+            Reason = reason ?? string.Empty
         };
         _context.ModerationAuditLogs.Add(auditLog);
         

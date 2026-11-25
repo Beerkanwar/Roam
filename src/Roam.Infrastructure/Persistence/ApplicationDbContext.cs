@@ -1,3 +1,4 @@
+using Microsoft.AspNetCore.DataProtection.EntityFrameworkCore;
 using Microsoft.AspNetCore.Identity.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore;
 
@@ -11,8 +12,12 @@ using Roam.Domain.Payments;
 
 namespace Roam.Infrastructure.Persistence;
 
-public class ApplicationDbContext : IdentityDbContext<ApplicationUser>
+public class ApplicationDbContext : IdentityDbContext<ApplicationUser>, IDataProtectionKeyContext
 {
+    // ASP.NET Core Data Protection key ring, shared by every API instance so tokens and other protected
+    // payloads issued by one server can be read by all of them.
+    public DbSet<DataProtectionKey> DataProtectionKeys { get; set; }
+
     public DbSet<Place> Places { get; set; }
     public DbSet<TourRequest> TourRequests { get; set; }
     public DbSet<ScheduledTour> ScheduledTours { get; set; }

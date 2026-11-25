@@ -10,4 +10,6 @@ public interface ITourNotificationService
     Task TourEndedAsync(string sessionId, string volunteerId, string requesterId);
     Task TourRequestCancelledAsync(string requestId, string cancelledByUserId, string counterpartId);
     Task TourRequestExpiredAsync(string requestId, string requesterId);
+    Task VolunteerWithdrawnAsync(string requestId, string requesterId);
+    Task SessionEndedForUserAsync(string sessionId, string userId);
 }

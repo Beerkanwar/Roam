@@ -18,8 +18,24 @@ public class FeedbackService : IFeedbackService
         _context = context;
     }
 
+    internal const int MaxCommentsLength = 2000;
+
     public async Task<Feedback> SubmitFeedbackAsync(string tourSessionId, string reviewerId, string targetUserId, FeedbackRating rating, string? comments)
     {
+        if (string.IsNullOrWhiteSpace(tourSessionId))
+            throw new ArgumentException("A tour session is required.", nameof(tourSessionId));
+
+        if (string.IsNullOrWhiteSpace(targetUserId))
+            throw new ArgumentException("A target user is required.", nameof(targetUserId));
+
+        if (!Enum.IsDefined(rating))
+            throw new ArgumentException("Invalid feedback rating.", nameof(rating));
+
+        if (comments?.Length > MaxCommentsLength)
+            throw new ArgumentException($"Feedback comments cannot exceed {MaxCommentsLength} characters.", nameof(comments));
+
+        comments = string.IsNullOrWhiteSpace(comments) ? null : comments.Trim();
+
         if (reviewerId == targetUserId)
             throw new InvalidOperationException("Users cannot submit feedback on themselves.");
 

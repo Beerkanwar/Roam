@@ -29,9 +29,15 @@ jobs:
         dotnet restore tests/Roam.IntegrationTests/Roam.IntegrationTests.csproj
 
     - name: Scan vulnerable packages
+      # `dotnet list package --vulnerable` always exits 0, so fail explicitly when anything is reported.
       run: |
-        dotnet list src/Roam.Api/Roam.Api.csproj package --vulnerable --include-transitive
-        dotnet list tests/Roam.Api.Tests/Roam.Api.Tests.csproj package --vulnerable --include-transitive
+        set -o pipefail
+        status=0
+        for project in src/Roam.Api/Roam.Api.csproj tests/Roam.Api.Tests/Roam.Api.Tests.csproj tests/Roam.IntegrationTests/Roam.IntegrationTests.csproj; do
+          dotnet list "$project" package --vulnerable --include-transitive | tee scan.txt
+          if grep -q "has the following vulnerable packages" scan.txt; then status=1; fi
+        done
+        exit $status
 
     - name: Build backend
       run: |
@@ -71,6 +77,9 @@ jobs:
     - name: Install dependencies
       run: npm ci
 
+    - name: Audit dependencies
+      run: npm audit --audit-level=high
+
     - name: Run linter
       run: npm run lint
 
@@ -90,3 +99,20 @@ jobs:
 
     - name: Build API Docker Image
       run: docker build -f infrastructure/docker/Dockerfile -t roam-api:ci .
+
+    - name: Build Web Docker Image
+      run: docker build -f infrastructure/docker/web.Dockerfile -t roam-web:ci .
+
+    - name: Build PostGIS Docker Image
+      run: docker build -f infrastructure/docker/postgis.Dockerfile -t roam-postgis:ci .
+
+    - name: Validate production compose file
+      working-directory: deploy
+      env:
+        POSTGRES_PASSWORD: ci
+        PUBLIC_DOMAIN: ci.example.com
+        DATA_PROTECTION_CERT_BASE64: ci
+      run: docker compose config --quiet
+
+    - name: Check deployment scripts
+      run: for f in deploy/*.sh infrastructure/nginx/40-legal-placeholders.sh; do bash -n "$f"; done

@@ -4,7 +4,13 @@ import { defineConfig } from 'vite'
 // https://vite.dev/config/
 export default defineConfig({
   plugins: [react()],
+  // MapLibre starts its worker as an ES module worker (see components/Map.tsx).
+  worker: {
+    format: 'es'
+  },
   build: {
+    // MapLibre alone is ~1 MB (~280 kB gzipped) and is already split into its own cached chunk.
+    chunkSizeWarningLimit: 1200,
     rollupOptions: {
       output: {
         manualChunks(id) {

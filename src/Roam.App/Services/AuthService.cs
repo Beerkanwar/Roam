@@ -12,11 +12,19 @@ public class AuthService : IAuthService
 {
     private const string AccessTokenKey = "roam_auth_access_token";
     private const string RefreshTokenKey = "roam_auth_refresh_token";
+    private const string ExpiresAtKey = "roam_auth_access_expires_at";
+    /// <summary>Refresh this long before the access token actually expires.</summary>
+    private static readonly TimeSpan RefreshSkew = TimeSpan.FromSeconds(60);
     private static readonly JsonSerializerOptions JsonOptions = new() { PropertyNameCaseInsensitive = true };
 
     private readonly ApiClient _apiClient;
     private string? _cachedAccessToken;
     private string? _cachedRefreshToken;
+    private DateTimeOffset? _accessTokenExpiresAt;
+
+    // One refresh at a time: concurrent 401s, hub reconnects and proactive refreshes share it.
+    private readonly object _refreshGate = new();
+    private Task<bool>? _refreshTask;
 
     public bool IsAuthenticated => !string.IsNullOrEmpty(_cachedAccessToken);
     public string? CurrentUserId { get; private set; }
@@ -38,6 +46,10 @@ public class AuthService : IAuthService
     {
         _cachedAccessToken = await GetSecureValueAsync(AccessTokenKey);
         _cachedRefreshToken = await GetSecureValueAsync(RefreshTokenKey);
+        var expiresRaw = await GetSecureValueAsync(ExpiresAtKey);
+        _accessTokenExpiresAt = long.TryParse(expiresRaw, out var unixMs)
+            ? DateTimeOffset.FromUnixTimeMilliseconds(unixMs)
+            : null;
 
         if (!string.IsNullOrEmpty(_cachedAccessToken))
         {
@@ -47,9 +59,18 @@ public class AuthService : IAuthService
         AuthStateChanged?.Invoke();
     }
 
-    public Task<string?> GetAccessTokenAsync()
+    /// <summary>
+    /// Returns an access token that is not about to expire, refreshing it first when needed. Used for every
+    /// API call and every SignalR (re)connect, so long-lived connections never reconnect with a stale token.
+    /// </summary>
+    public async Task<string?> GetAccessTokenAsync()
     {
-        return Task.FromResult(_cachedAccessToken);
+        var stale = _accessTokenExpiresAt.HasValue && DateTimeOffset.UtcNow >= _accessTokenExpiresAt.Value - RefreshSkew;
+        if ((stale || string.IsNullOrEmpty(_cachedAccessToken)) && !string.IsNullOrEmpty(_cachedRefreshToken))
+        {
+            await RefreshTokenAsync();
+        }
+        return _cachedAccessToken;
     }
 
     public async Task<bool> LoginAsync(string email, string password)
@@ -64,14 +85,7 @@ public class AuthService : IAuthService
 
             if (response != null && !string.IsNullOrEmpty(response.AccessToken))
             {
-                _cachedAccessToken = response.AccessToken;
-                _cachedRefreshToken = response.RefreshToken;
-
-                await SetSecureValueAsync(AccessTokenKey, _cachedAccessToken);
-                if (!string.IsNullOrEmpty(_cachedRefreshToken))
-                {
-                    await SetSecureValueAsync(RefreshTokenKey, _cachedRefreshToken);
-                }
+                await StoreTokensAsync(response);
 
                 CurrentUserEmail = email.Trim();
                 await FetchUserProfileAsync();
@@ -134,7 +148,18 @@ public class AuthService : IAuthService
         }
     }
 
-    public async Task<bool> RefreshTokenAsync()
+    public Task<bool> RefreshTokenAsync()
+    {
+        lock (_refreshGate)
+        {
+            if (_refreshTask is { IsCompleted: false })
+                return _refreshTask;
+            _refreshTask = RefreshCoreAsync();
+            return _refreshTask;
+        }
+    }
+
+    private async Task<bool> RefreshCoreAsync()
     {
         if (string.IsNullOrEmpty(_cachedRefreshToken))
         {
@@ -142,33 +167,65 @@ public class AuthService : IAuthService
             return false;
         }
 
+        HttpResponseMessage response;
         try
         {
-            var payload = new { refreshToken = _cachedRefreshToken };
-            var response = await _apiClient.PostAsync<object, LoginResponse>("/refresh", payload, requireAuth: false);
-
-            if (response != null && !string.IsNullOrEmpty(response.AccessToken))
+            using var request = new HttpRequestMessage(HttpMethod.Post, "/refresh")
             {
-                _cachedAccessToken = response.AccessToken;
-                await SetSecureValueAsync(AccessTokenKey, _cachedAccessToken);
+                Content = new StringContent(JsonSerializer.Serialize(new { refreshToken = _cachedRefreshToken }), Encoding.UTF8, "application/json")
+            };
+            response = await _apiClient.SendAsync(request, requireAuth: false);
+        }
+        catch
+        {
+            // Offline or server unreachable: keep the session and try again later.
+            return false;
+        }
 
-                if (!string.IsNullOrEmpty(response.RefreshToken))
-                {
-                    _cachedRefreshToken = response.RefreshToken;
-                    await SetSecureValueAsync(RefreshTokenKey, _cachedRefreshToken);
-                }
+        using (response)
+        {
+            if (response.IsSuccessStatusCode)
+            {
+                var content = await response.Content.ReadAsStringAsync();
+                var tokens = JsonSerializer.Deserialize<LoginResponse>(content, JsonOptions);
+                if (tokens == null || string.IsNullOrEmpty(tokens.AccessToken))
+                    return false;
 
+                await StoreTokensAsync(tokens);
                 AuthStateChanged?.Invoke();
                 return true;
             }
 
-            await LogoutAsync();
+            // 4xx: the refresh token expired or was revoked (e.g. account suspended). End the session.
+            var status = (int)response.StatusCode;
+            if (status >= 400 && status < 500 && status != 429)
+            {
+                await LogoutAsync();
+            }
             return false;
         }
-        catch
+    }
+
+    private async Task StoreTokensAsync(LoginResponse tokens)
+    {
+        _cachedAccessToken = tokens.AccessToken;
+        await SetSecureValueAsync(AccessTokenKey, _cachedAccessToken!);
+
+        if (!string.IsNullOrEmpty(tokens.RefreshToken))
         {
-            await LogoutAsync();
-            return false;
+            _cachedRefreshToken = tokens.RefreshToken;
+            await SetSecureValueAsync(RefreshTokenKey, _cachedRefreshToken);
+        }
+
+        if (tokens.ExpiresIn is > 0)
+        {
+            _accessTokenExpiresAt = DateTimeOffset.UtcNow.AddSeconds(tokens.ExpiresIn.Value);
+            await SetSecureValueAsync(ExpiresAtKey, _accessTokenExpiresAt.Value.ToUnixTimeMilliseconds().ToString());
+        }
+        else
+        {
+            _accessTokenExpiresAt = null;
+            RemoveSecureValue(ExpiresAtKey);
         }
     }
 
@@ -176,6 +233,7 @@ public class AuthService : IAuthService
     {
         _cachedAccessToken = null;
         _cachedRefreshToken = null;
+        _accessTokenExpiresAt = null;
         CurrentUserId = null;
         CurrentUserEmail = null;
         CurrentDisplayName = null;
@@ -183,6 +241,7 @@ public class AuthService : IAuthService
 
         RemoveSecureValue(AccessTokenKey);
         RemoveSecureValue(RefreshTokenKey);
+        RemoveSecureValue(ExpiresAtKey);
 
         AuthStateChanged?.Invoke();
         await Task.CompletedTask;

@@ -14,6 +14,7 @@ public static class ChatEndpoints
     {
         var group = app.MapGroup("/api/v1/sessions")
             .RequireAuthorization()
+            .RequireRateLimiting("UserPolicy")
             .WithTags("Chat")
             .WithApiVersionSet(app.NewApiVersionSet().Build())
             .HasApiVersion(1, 0);

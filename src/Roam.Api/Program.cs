@@ -2,6 +2,7 @@ using System.Security.Claims;
 using System.Threading.RateLimiting;
 using Asp.Versioning;
 using Microsoft.AspNetCore.DataProtection;
+using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.RateLimiting;
 using Microsoft.AspNetCore.SignalR;
@@ -9,6 +10,8 @@ using Microsoft.EntityFrameworkCore;
 using Roam.Api.Endpoints;
 using Roam.Api.Hubs;
 using Roam.Api.Middleware;
+using Roam.Api.Scaling;
+using Roam.Api.Security;
 using Roam.Api.Workers;
 using Roam.Application.Places;
 using Roam.Application.TourRequests;
@@ -17,9 +20,11 @@ using Roam.Domain.Users;
 using Roam.Infrastructure.Maps;
 using Roam.Infrastructure.Persistence;
 using Roam.Infrastructure.Places;
+using Roam.Infrastructure.Scaling;
 using Roam.Infrastructure.TourRequests;
 using Roam.Infrastructure.TrustAndSafety;
 using Serilog;
+using StackExchange.Redis;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -60,16 +65,47 @@ builder.Services.AddIdentityApiEndpoints<ApplicationUser>(options =>
 // Identity Email Sender
 builder.Services.AddTransient<IEmailSender<ApplicationUser>, Roam.Api.Services.SmtpEmailSender>();
 
-// Data Protection Keys Persistence
-var keysFolder = Environment.GetEnvironmentVariable("DATA_PROTECTION_KEYS_PATH") 
-    ?? (builder.Environment.IsProduction() ? "/app/keys" : Path.Combine(AppContext.BaseDirectory, "temp_keys"));
-Directory.CreateDirectory(keysFolder);
-builder.Services.AddDataProtection()
-    .PersistKeysToFileSystem(new DirectoryInfo(keysFolder))
-    .SetApplicationName("Roam");
+// Data Protection key ring. Bearer access/refresh tokens are data-protected, so every API instance must
+// share the same keys or a token issued by one server is rejected by another. Keys are stored in
+// PostgreSQL by default; DATA_PROTECTION_KEYS_PATH opts back into a (single-server) folder.
+var dataProtection = builder.Services.AddDataProtection().SetApplicationName("Roam");
+var keysFolder = Environment.GetEnvironmentVariable("DATA_PROTECTION_KEYS_PATH");
+if (!string.IsNullOrWhiteSpace(keysFolder))
+{
+    Directory.CreateDirectory(keysFolder);
+    dataProtection.PersistKeysToFileSystem(new DirectoryInfo(keysFolder));
+}
+else
+{
+    dataProtection.PersistKeysToDbContext<ApplicationDbContext>();
+}
+
+// Encrypt the key ring at rest: anyone who can read the database (or a backup of it) could otherwise
+// use the keys to forge sign-in tokens. DATA_PROTECTION_CERT_BASE64 is a base64 PKCS#12 (.pfx) file.
+var keyEncryptionCertificate = DataProtectionCertificate.Load(
+    builder.Configuration["DATA_PROTECTION_CERT_BASE64"], builder.Configuration["DATA_PROTECTION_CERT_PASSWORD"]);
+if (keyEncryptionCertificate is not null)
+{
+    dataProtection.ProtectKeysWithCertificate(keyEncryptionCertificate)
+        .UnprotectKeysWithAnyCertificate(keyEncryptionCertificate);
+}
+else if (builder.Environment.IsProduction() && builder.Configuration["DATA_PROTECTION_ALLOW_UNENCRYPTED_KEYS"] != "true")
+{
+    throw new InvalidOperationException(
+        "DATA_PROTECTION_CERT_BASE64 must be set in Production so sign-in keys are encrypted at rest " +
+        "(scripts/setup-env.sh generates it). Set DATA_PROTECTION_ALLOW_UNENCRYPTED_KEYS=true to run without it.");
+}
+
+// State shared across API instances (Redis when ConnectionStrings:Redis is set, in-memory otherwise).
+var redisConn = builder.Configuration.GetConnectionString("Redis");
+var redis = builder.Services.AddRoamScaleOut(redisConn);
 
 // Add Auth & Policies
 builder.Services.AddAuthentication();
+// Access tokens embed VolunteerStatus/AccountStatus/role claims at issue time; refresh them from the
+// database (briefly cached) on every request so permission changes apply without forcing re-login.
+builder.Services.AddSingleton<IUserStateCache, UserStateCache>();
+builder.Services.AddScoped<IClaimsTransformation, UserStateClaimsTransformation>();
 builder.Services.AddAuthorization(options =>
 {
     options.AddPolicy("RequireAdminRole", policy => policy.RequireRole("Admin"));
@@ -81,32 +117,29 @@ builder.Services.AddRateLimiter(options =>
 {
     options.RejectionStatusCode = StatusCodes.Status429TooManyRequests;
 
-    options.AddPolicy("AuthPolicy", httpContext =>
-        RateLimitPartition.GetFixedWindowLimiter(
-            httpContext.Connection.RemoteIpAddress?.ToString() ?? "unknown",
-            _ => new FixedWindowRateLimiterOptions
+    // With Redis configured, counters are shared by all instances; otherwise they are per process.
+    RateLimitPartition<string> FixedWindow(HttpContext httpContext, string policy, string partitionKey, int permitLimit) =>
+        redis is null
+            ? RateLimitPartition.GetFixedWindowLimiter(partitionKey, _ => new FixedWindowRateLimiterOptions
             {
-                PermitLimit = 10,
+                PermitLimit = permitLimit,
                 Window = TimeSpan.FromMinutes(1)
-            }));
+            })
+            : RateLimitPartition.Get(partitionKey, key => new RedisFixedWindowRateLimiter(
+                redis, $"roam:ratelimit:{policy}:{key}", permitLimit, TimeSpan.FromMinutes(1),
+                httpContext.RequestServices.GetService<ILoggerFactory>()?.CreateLogger<RedisFixedWindowRateLimiter>()));
+
+    static string UserOrIp(HttpContext httpContext) =>
+        httpContext.User.FindFirstValue(ClaimTypes.NameIdentifier) ?? httpContext.Connection.RemoteIpAddress?.ToString() ?? "anon";
+
+    options.AddPolicy("AuthPolicy", httpContext =>
+        FixedWindow(httpContext, "auth", httpContext.Connection.RemoteIpAddress?.ToString() ?? "unknown", 10));
 
     options.AddPolicy("UserPolicy", httpContext =>
-        RateLimitPartition.GetFixedWindowLimiter(
-            httpContext.User.FindFirstValue(ClaimTypes.NameIdentifier) ?? httpContext.Connection.RemoteIpAddress?.ToString() ?? "anon",
-            _ => new FixedWindowRateLimiterOptions
-            {
-                PermitLimit = 60,
-                Window = TimeSpan.FromMinutes(1)
-            }));
+        FixedWindow(httpContext, "user", UserOrIp(httpContext), 60));
 
     options.AddPolicy("ReportsPolicy", httpContext =>
-        RateLimitPartition.GetFixedWindowLimiter(
-            httpContext.User.FindFirstValue(ClaimTypes.NameIdentifier) ?? httpContext.Connection.RemoteIpAddress?.ToString() ?? "anon",
-            _ => new FixedWindowRateLimiterOptions
-            {
-                PermitLimit = 15,
-                Window = TimeSpan.FromMinutes(1)
-            }));
+        FixedWindow(httpContext, "reports", UserOrIp(httpContext), 15));
 });
 
 // Problem Details
@@ -128,23 +161,31 @@ builder.Services.AddScoped<Roam.Application.Payments.IPaymentService, Roam.Infra
 
 // TURN Server configuration
 builder.Services.Configure<Roam.Application.Sessions.TurnServerOptions>(builder.Configuration.GetSection(Roam.Application.Sessions.TurnServerOptions.Position));
-builder.Services.AddScoped<Roam.Application.Sessions.ITurnService, Roam.Infrastructure.Realtime.TurnService>();
+builder.Services.AddHttpClient<Roam.Application.Sessions.ITurnService, Roam.Infrastructure.Realtime.TurnService>(client =>
+{
+    client.Timeout = TimeSpan.FromSeconds(10);
+});
 
 // Add In-Memory Cache
 builder.Services.AddMemoryCache();
 
-// Add SignalR with Security Filter and optional Redis backplane
-var redisConn = builder.Configuration.GetConnectionString("Redis");
+// Add SignalR with Security Filter and, for multiple instances, the Redis backplane so groups,
+// Clients.User(...) and Clients.Client(...) reach connections held by any server.
 var signalRBuilder = builder.Services.AddSignalR(options =>
 {
     options.AddFilter<SignalRSecurityFilter>();
 });
 
-if (!string.IsNullOrWhiteSpace(redisConn))
+if (redis is not null)
 {
-    signalRBuilder.AddStackExchangeRedis(redisConn);
+    signalRBuilder.AddStackExchangeRedis(options =>
+    {
+        options.Configuration.ChannelPrefix = RedisChannel.Literal("roam:signalr");
+        options.ConnectionFactory = _ => Task.FromResult(redis);
+    });
 }
 builder.Services.AddSingleton<SignalRSecurityFilter>();
+builder.Services.AddSingleton<ITourConnectionRegistry, DistributedTourConnectionRegistry>();
 
 // Add Health Checks
 builder.Services.AddHealthChecks()
@@ -257,7 +298,9 @@ if (Environment.GetEnvironmentVariable("SKIP_MIGRATIONS") != "true")
 {
     using var scope = app.Services.CreateScope();
     var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
-    await dbContext.Database.MigrateAsync();
+    // Instances starting at the same time would otherwise apply the same migration twice and crash.
+    await PostgresAdvisoryLock.RunExclusiveAsync(dbContext, PostgresAdvisoryLock.MigrationLockId,
+        ct => dbContext.Database.MigrateAsync(ct), CancellationToken.None);
     await Roam.Infrastructure.Identity.DatabaseSeeder.SeedAsync(app.Services, app.Configuration);
 }
 

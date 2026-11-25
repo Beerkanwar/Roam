@@ -3,6 +3,7 @@ using System.Threading.Tasks;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging;
 using Roam.Domain.Users;
 
 namespace Roam.Infrastructure.Identity;
@@ -12,8 +13,20 @@ public static class DatabaseSeeder
     public static async Task SeedAsync(IServiceProvider serviceProvider, IConfiguration configuration)
     {
         using var scope = serviceProvider.CreateScope();
-        var roleManager = scope.ServiceProvider.GetRequiredService<RoleManager<IdentityRole>>();
-        var userManager = scope.ServiceProvider.GetRequiredService<UserManager<ApplicationUser>>();
+        var db = scope.ServiceProvider.GetRequiredService<Roam.Infrastructure.Persistence.ApplicationDbContext>();
+
+        // Several instances may start at once; serialize seeding so they don't race to create the same
+        // role/admin (which would fail one instance's startup on a unique-index violation).
+        await Roam.Infrastructure.Scaling.PostgresAdvisoryLock.RunExclusiveAsync(
+            db, Roam.Infrastructure.Scaling.PostgresAdvisoryLock.SeedingLockId,
+            _ => SeedCoreAsync(scope.ServiceProvider, configuration), CancellationToken.None);
+    }
+
+    private static async Task SeedCoreAsync(IServiceProvider scopedServices, IConfiguration configuration)
+    {
+        var roleManager = scopedServices.GetRequiredService<RoleManager<IdentityRole>>();
+        var userManager = scopedServices.GetRequiredService<UserManager<ApplicationUser>>();
+        var logger = scopedServices.GetService<ILoggerFactory>()?.CreateLogger(typeof(DatabaseSeeder).FullName!);
 
         // 1. Ensure "Admin" role exists
         if (!await roleManager.RoleExistsAsync("Admin"))
@@ -48,6 +61,15 @@ public static class DatabaseSeeder
                     {
                         await userManager.AddToRoleAsync(adminUser, "Admin");
                     }
+                    else
+                    {
+                        logger?.LogError("Bootstrap admin account could not be created: {Errors}",
+                            string.Join("; ", createResult.Errors.Select(e => e.Description)));
+                    }
+                }
+                else
+                {
+                    logger?.LogWarning("Bootstrap admin email is set but the bootstrap password is missing or shorter than 8 characters; admin account was not created.");
                 }
             }
             // Safeguard: Never auto-promote pre-existing accounts to Admin at restart

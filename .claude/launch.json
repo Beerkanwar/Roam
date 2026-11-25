@@ -1,0 +1,11 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "roam-web",
+      "runtimeExecutable": "npm",
+      "runtimeArgs": ["--prefix", "src/Roam.Web", "run", "dev", "--", "--port", "5173", "--strictPort"],
+      "port": 5173
+    }
+  ]
+}

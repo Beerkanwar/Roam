@@ -1,0 +1,130 @@
+# Production stack for one server (x86-64 or ARM64). See docs/PUBLISHING.md.
+#
+#   cd deploy
+#   ./setup.sh            # once: creates .env with generated secrets
+#   docker compose up -d --build
+#
+# Visitors reach the site through a Cloudflare Tunnel (the "cloudflared" service): no open ports, free
+# HTTPS from Cloudflare. "web" serves the app and proxies the API; the API instances share state through
+# PostgreSQL and Redis, so API_REPLICAS can be raised without other changes.
+name: roam-prod
+
+# Keep container logs from filling the disk (Docker keeps them forever by default).
+x-logging: &logging
+  driver: json-file
+  options:
+    max-size: "10m"
+    max-file: "5"
+
+services:
+  db:
+    build:
+      context: ..
+      dockerfile: infrastructure/docker/postgis.Dockerfile
+    image: roam-postgis:15
+    restart: unless-stopped
+    logging: *logging
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-roam}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Run ./setup.sh first (POSTGRES_PASSWORD is missing in .env)}
+      POSTGRES_DB: ${POSTGRES_DB:-roam}
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-roam} -d ${POSTGRES_DB:-roam}"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    logging: *logging
+    # Only short-lived shared state lives here (rate limits, caches, SignalR backplane); no persistence.
+    command: ["redis-server", "--save", "", "--appendonly", "no"]
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+  api:
+    build:
+      context: ..
+      dockerfile: infrastructure/docker/Dockerfile
+    image: roam-api:latest
+    restart: unless-stopped
+    logging: *logging
+    deploy:
+      replicas: ${API_REPLICAS:-2}
+    environment:
+      ASPNETCORE_ENVIRONMENT: Production
+      ASPNETCORE_FORWARDEDHEADERS_ENABLED: "true"
+      ConnectionStrings__DefaultConnection: "Host=db;Port=5432;Database=${POSTGRES_DB:-roam};Username=${POSTGRES_USER:-roam};Password=${POSTGRES_PASSWORD}"
+      ConnectionStrings__Redis: "redis:6379,abortConnect=false"
+      Cors__AllowedOrigins__0: "https://${PUBLIC_DOMAIN:?Set PUBLIC_DOMAIN in .env}"
+      AllowedHosts: "${PUBLIC_DOMAIN};localhost;127.0.0.1"
+      # Used for links in emails (e.g. password reset).
+      App__PublicUrl: "${PUBLIC_URL:-https://${PUBLIC_DOMAIN}}"
+      # Sign-in keys are stored in PostgreSQL, encrypted with this certificate.
+      DATA_PROTECTION_CERT_BASE64: "${DATA_PROTECTION_CERT_BASE64:?Run ./setup.sh first}"
+      DATA_PROTECTION_CERT_PASSWORD: "${DATA_PROTECTION_CERT_PASSWORD:-}"
+      # Video relay: "cloudflare" (recommended, free tier) or empty for direct connections only.
+      TurnServer__Provider: "${TURN_PROVIDER:-}"
+      TurnServer__CloudflareKeyId: "${CLOUDFLARE_TURN_KEY_ID:-}"
+      TurnServer__CloudflareApiToken: "${CLOUDFLARE_TURN_API_TOKEN:-}"
+      # Email (password reset / confirmation). Leave SMTP_HOST empty to disable.
+      Smtp__Host: "${SMTP_HOST:-}"
+      Smtp__Port: "${SMTP_PORT:-587}"
+      Smtp__Username: "${SMTP_USERNAME:-}"
+      Smtp__Password: "${SMTP_PASSWORD:-}"
+      Smtp__FromEmail: "${SMTP_FROM_EMAIL:-}"
+      Smtp__FromName: "${SMTP_FROM_NAME:-Roam}"
+      Smtp__EnableSsl: "${SMTP_ENABLE_SSL:-true}"
+      # OpenStreetMap's place search requires an identifying User-Agent with contact details.
+      Geocoding__UserAgent: "Roam/1.0 (+https://${PUBLIC_DOMAIN}; ${CONTACT_EMAIL:-})"
+      BOOTSTRAP_ADMIN_EMAIL: "${BOOTSTRAP_ADMIN_EMAIL:-}"
+      BOOTSTRAP_ADMIN_PASSWORD: "${BOOTSTRAP_ADMIN_PASSWORD:-}"
+      BOOTSTRAP_VOLUNTEER_EMAILS: "${BOOTSTRAP_VOLUNTEER_EMAILS:-}"
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
+  web:
+    build:
+      context: ..
+      dockerfile: infrastructure/docker/web.Dockerfile
+      args:
+        VITE_MAP_API_KEY: "${MAPTILER_API_KEY:-}"
+    image: roam-web:latest
+    restart: unless-stopped
+    logging: *logging
+    environment:
+      OPERATOR_NAME: "${OPERATOR_NAME:-the Roam team}"
+      CONTACT_EMAIL: "${CONTACT_EMAIL:-}"
+    # Only reachable from this machine (for testing: http://localhost:8080). The public gets in through
+    # the tunnel below.
+    ports:
+      - "127.0.0.1:${WEB_PORT:-8080}:8080"
+    depends_on:
+      api:
+        condition: service_healthy
+
+  # Cloudflare Tunnel: connects out to Cloudflare, which serves https://PUBLIC_DOMAIN and forwards
+  # requests to http://web:8080. Enabled by COMPOSE_PROFILES=tunnel in .env.
+  cloudflared:
+    image: cloudflare/cloudflared:latest
+    restart: unless-stopped
+    logging: *logging
+    command: ["tunnel", "--no-autoupdate", "run"]
+    environment:
+      TUNNEL_TOKEN: "${CLOUDFLARE_TUNNEL_TOKEN:-}"
+    profiles: ["tunnel"]
+    depends_on:
+      web:
+        condition: service_healthy
+
+volumes:
+  pgdata:

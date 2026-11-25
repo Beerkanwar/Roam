@@ -54,4 +54,27 @@ public class TourRequest
 
         Status = targetState;
     }
+
+    /// <summary>
+    /// True while a volunteer is attached to the request but the tour has not started, i.e. the
+    /// volunteer can still step away and the request can return to discovery.
+    /// </summary>
+    public bool CanReleaseVolunteer =>
+        !string.IsNullOrEmpty(AssignedVolunteerId) &&
+        Status is TourRequestStatus.VolunteerInterested or TourRequestStatus.Accepted or TourRequestStatus.Confirmed;
+
+    /// <summary>
+    /// Detaches the assigned volunteer (they withdrew or their account was deleted) and puts the
+    /// request back into discovery so another volunteer can pick it up. Any agreed start time was
+    /// negotiated with the departing volunteer, so it is cleared.
+    /// </summary>
+    public void ReleaseVolunteer()
+    {
+        if (!CanReleaseVolunteer)
+            throw new InvalidOperationException($"Cannot release the volunteer from a tour request in status {Status}.");
+
+        Status = TourRequestStatus.Published;
+        AssignedVolunteerId = null;
+        RequestedStartTime = null;
+    }
 }

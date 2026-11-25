@@ -1,5 +1,7 @@
 using System;
 using System.Threading.Tasks;
+using Microsoft.AspNetCore.Http.Connections;
+using Microsoft.AspNetCore.Http.Connections.Client;
 using Microsoft.AspNetCore.SignalR.Client;
 using Microsoft.Maui.Devices;
 using Roam.Contracts.Chat;
@@ -30,23 +32,21 @@ public class SignalRService : IAsyncDisposable
         _baseApiUrl = !string.IsNullOrWhiteSpace(baseApiUrl) ? baseApiUrl : GetDefaultBaseUrl();
     }
 
-    public async Task InitializeAsync(string token)
+    /// <param name="accessTokenProvider">
+    /// Called on every connect and automatic reconnect, so a reconnect after the access token expired
+    /// uses a refreshed token instead of the one captured when the session was joined.
+    /// </param>
+    public async Task InitializeAsync(Func<Task<string?>> accessTokenProvider)
     {
         await DisposeAsync();
 
         _tourHubConnection = new HubConnectionBuilder()
-            .WithUrl($"{_baseApiUrl}/hubs/tour", options =>
-            {
-                options.AccessTokenProvider = () => Task.FromResult<string?>(token);
-            })
+            .WithUrl($"{_baseApiUrl}/hubs/tour", options => ConfigureConnection(options, accessTokenProvider))
             .WithAutomaticReconnect()
             .Build();
 
         _chatHubConnection = new HubConnectionBuilder()
-            .WithUrl($"{_baseApiUrl}/hubs/chat", options =>
-            {
-                options.AccessTokenProvider = () => Task.FromResult<string?>(token);
-            })
+            .WithUrl($"{_baseApiUrl}/hubs/chat", options => ConfigureConnection(options, accessTokenProvider))
             .WithAutomaticReconnect()
             .Build();
 
@@ -69,6 +69,15 @@ public class SignalRService : IAsyncDisposable
 
         await _tourHubConnection.StartAsync();
         await _chatHubConnection.StartAsync();
+    }
+
+    private static void ConfigureConnection(HttpConnectionOptions options, Func<Task<string?>> accessTokenProvider)
+    {
+        options.AccessTokenProvider = accessTokenProvider;
+        // WebSockets without the negotiate round-trip, so no sticky sessions are needed when several
+        // API servers sit behind a round-robin load balancer.
+        options.Transports = HttpTransportType.WebSockets;
+        options.SkipNegotiation = true;
     }
 
     public async Task JoinSessionAsync(string sessionId)

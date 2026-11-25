@@ -1,5 +1,6 @@
 using System.Security.Claims;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.EntityFrameworkCore;
 using Roam.Application.TrustAndSafety;
 using Roam.Domain.TrustAndSafety;
 
@@ -7,6 +8,8 @@ namespace Roam.Api.Endpoints;
 
 public static class TrustAndSafetyEndpoints
 {
+    private const int MaxModerationReasonLength = 1900;
+
     public static void MapTrustAndSafetyEndpoints(this IEndpointRouteBuilder builder)
     {
         var group = builder.MapGroup("/api/v1/trust-safety")
@@ -90,11 +93,16 @@ public static class TrustAndSafetyEndpoints
         });
 
         // Moderation endpoints (Admin only)
-        group.MapPost("/moderation/resolve/{reportId}", async (string reportId, [FromBody] ResolveReportRequest request, HttpContext httpContext, ClaimsPrincipal user, ITrustAndSafetyService service, CancellationToken cancellationToken) =>
+        group.MapPost("/moderation/resolve/{reportId}", async (string reportId, [FromBody] ResolveReportRequest request, HttpContext httpContext, ClaimsPrincipal user, ITrustAndSafetyService service,
+            Roam.Infrastructure.Persistence.ApplicationDbContext context, Roam.Api.Security.IUserStateCache userStateCache, CancellationToken cancellationToken) =>
         {
             var moderatorId = user.FindFirstValue(ClaimTypes.NameIdentifier) ?? throw new InvalidOperationException("User ID missing.");
             var clientIp = httpContext.Connection.RemoteIpAddress?.ToString() ?? "unknown";
-            
+
+            // Leave room for the " (IP: ...)" audit suffix within the 2000-character audit column.
+            if (request.Reason?.Length > MaxModerationReasonLength)
+                return Results.BadRequest(new { error = $"Reason cannot exceed {MaxModerationReasonLength} characters." });
+
             try
             {
                 var auditReason = string.IsNullOrWhiteSpace(request.Reason) 
@@ -102,6 +110,11 @@ public static class TrustAndSafetyEndpoints
                     : $"{request.Reason} (IP: {clientIp})";
 
                 await service.ResolveReportAsync(reportId, request.Action, moderatorId, auditReason, cancellationToken);
+
+                // A suspension/ban must take effect on every server now, not when cached state expires.
+                var targetUserId = await context.Reports.AsNoTracking()
+                    .Where(r => r.Id == reportId).Select(r => r.ReportedUserId).FirstOrDefaultAsync(cancellationToken);
+                if (!string.IsNullOrEmpty(targetUserId)) userStateCache.Invalidate(targetUserId);
                 return Results.Ok();
             }
             catch (ArgumentException ex)
@@ -110,7 +123,7 @@ public static class TrustAndSafetyEndpoints
             }
         })
         .RequireAuthorization("RequireAdminRole");
-        group.MapPost("/feedback", async ([FromBody] SubmitFeedbackRequest request, [FromServices] IFeedbackService feedbackService, ClaimsPrincipal user) => 
+        group.MapPost("/feedback", async ([FromBody] SubmitFeedbackRequest request, [FromServices] IFeedbackService feedbackService, ClaimsPrincipal user) =>
         {
             var reviewerId = user.FindFirstValue(ClaimTypes.NameIdentifier);
             if (string.IsNullOrEmpty(reviewerId)) return Results.Unauthorized();

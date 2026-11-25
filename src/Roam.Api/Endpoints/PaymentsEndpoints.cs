@@ -82,8 +82,9 @@ public static class PaymentsEndpoints
                 return Results.Conflict(new { error = ex.Message });
             }
         })
+        .RequireAuthorization("RequireAdminRole")
         .WithName("SettleTip")
-        .WithSummary("Settle a tip transaction upon PSP confirmation");
+        .WithSummary("Settle a tip transaction upon PSP confirmation (administrators only)");
 
         group.MapPost("/donations", async (
             [FromBody] SubmitDonationRequest request,
@@ -105,6 +106,10 @@ public static class PaymentsEndpoints
             catch (ArgumentException ex)
             {
                 return Results.BadRequest(new { error = ex.Message });
+            }
+            catch (InvalidOperationException ex)
+            {
+                return Results.Conflict(new { error = ex.Message });
             }
         })
         .WithName("SubmitDonation")

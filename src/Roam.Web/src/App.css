@@ -70,6 +70,12 @@ body {
   gap: 16px;
 }
 
+/* The body scrolls; its sections must keep their natural height instead of being squashed (the
+   category chips row collapsed to a thin line when the panel content was taller than the panel). */
+.roam-panel-body > * {
+  flex-shrink: 0;
+}
+
 /* Tab Navigation */
 .roam-tabs {
   display: flex;
@@ -81,8 +87,11 @@ body {
 }
 
 .roam-tab-btn {
-  flex: 1;
-  padding: 8px 10px;
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  padding: 8px 6px;
   background: transparent;
   border: none;
   border-radius: 7px;

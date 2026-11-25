@@ -13,5 +13,6 @@ public interface INotificationClient
     Task TourEnded(string requestId);
     Task TourRequestCancelled(string requestId, string cancelledByUserId);
     Task TourRequestExpired(string requestId);
+    Task TourRequestVolunteerWithdrawn(string requestId);
     Task ReportStatusChanged(string reportId, string status);
 }

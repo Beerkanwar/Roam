@@ -1,6 +1,11 @@
 import React, { useRef, useEffect } from 'react';
 import * as maplibregl from 'maplibre-gl';
 import 'maplibre-gl/dist/maplibre-gl.css';
+// MapLibre 6 looks for its worker file next to its own module, which does not exist once the app is
+// bundled. Let Vite bundle the worker (with its shared code) and tell MapLibre where it is.
+import mapWorkerUrl from 'maplibre-gl/dist/maplibre-gl-worker.mjs?worker&url';
+
+maplibregl.setWorkerUrl(mapWorkerUrl);
 
 interface MapProps {
     onLocationSelected?: (lat: number, lng: number) => void;
@@ -13,32 +18,14 @@ const Map: React.FC<MapProps> = ({ onLocationSelected }) => {
     useEffect(() => {
         if (map.current || !mapContainer.current) return; // initialize map only once
         
-        const apiKey = import.meta.env.VITE_MAP_API_KEY || ''; // Needs to be provided in MissingInputs
-        
-        const isDummyKey = apiKey === '' || apiKey.includes('your_maptiler_api_key_here');
-
-        const mapStyle = isDummyKey ? {
-            version: 8 as const,
-            sources: {
-                'osm-tiles': {
-                    type: 'raster' as const,
-                    tiles: [
-                        'https://a.tile.openstreetmap.org/{z}/{x}/{y}.png',
-                        'https://b.tile.openstreetmap.org/{z}/{x}/{y}.png',
-                        'https://c.tile.openstreetmap.org/{z}/{x}/{y}.png'
-                    ],
-                    tileSize: 256,
-                    attribution: '&copy; OpenStreetMap contributors'
-                }
-            },
-            layers: [{
-                id: 'osm-tiles-layer',
-                type: 'raster' as const,
-                source: 'osm-tiles',
-                minzoom: 0,
-                maxzoom: 19
-            }]
-        } : `https://api.maptiler.com/maps/streets-v2/style.json?key=${apiKey}`;
+        // Default: OpenFreeMap (free vector tiles, no key or sign-up, no usage limits). The public
+        // tile.openstreetmap.org servers must not be used by apps. A MapTiler key, if provided at build
+        // time, switches to MapTiler's style instead.
+        const apiKey = (import.meta.env.VITE_MAP_API_KEY || '').trim();
+        const hasMapTilerKey = apiKey !== '' && !apiKey.includes('your_maptiler_api_key_here');
+        const mapStyle = hasMapTilerKey
+            ? `https://api.maptiler.com/maps/streets-v2/style.json?key=${encodeURIComponent(apiKey)}`
+            : 'https://tiles.openfreemap.org/styles/liberty';
 
         map.current = new maplibregl.Map({
             container: mapContainer.current,
@@ -65,7 +52,13 @@ const Map: React.FC<MapProps> = ({ onLocationSelected }) => {
             }
         });
 
+        // MapLibre only tracks window resizes. Follow the container too, so the canvas is redrawn when the
+        // map is (re)mounted before layout settles (e.g. returning from a live session or a background tab).
+        const resizeObserver = new ResizeObserver(() => map.current?.resize());
+        resizeObserver.observe(mapContainer.current);
+
         return () => {
+            resizeObserver.disconnect();
             if (currentMarker) {
                 currentMarker.remove();
             }

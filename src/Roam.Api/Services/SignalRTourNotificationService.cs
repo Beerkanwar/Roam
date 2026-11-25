@@ -55,6 +55,23 @@ public class SignalRTourNotificationService : ITourNotificationService
         }
     }
 
+    public async Task VolunteerWithdrawnAsync(string requestId, string requesterId)
+    {
+        if (!string.IsNullOrEmpty(requesterId))
+        {
+            await _notificationHub.Clients.User(requesterId).TourRequestVolunteerWithdrawn(requestId);
+        }
+    }
+
+    public async Task SessionEndedForUserAsync(string sessionId, string userId)
+    {
+        if (!string.IsNullOrEmpty(userId))
+        {
+            await _notificationHub.Clients.User(userId).TourEnded(sessionId);
+        }
+        await _tourHub.Clients.Group($"tour:{sessionId}").TourEnded(sessionId);
+    }
+
     public async Task TourRequestExpiredAsync(string requestId, string requesterId)
     {
         if (!string.IsNullOrEmpty(requesterId))

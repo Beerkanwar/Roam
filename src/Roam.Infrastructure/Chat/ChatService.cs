@@ -159,7 +159,9 @@ public class ChatService : IChatService
 
         if (before.HasValue)
         {
-            query = query.Where(m => m.SentAt < before.Value);
+            // Query-string timestamps without an offset bind as Unspecified, which Npgsql rejects for timestamptz.
+            var beforeUtc = Roam.Infrastructure.Common.UtcDateTime.Normalize(before.Value);
+            query = query.Where(m => m.SentAt < beforeUtc);
         }
 
         var messages = await query
